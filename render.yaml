@@ -1,0 +1,89 @@
+services:
+  # ─────────────────────────────────────────
+  # Web Service (Node.js / Express + React)
+  # ─────────────────────────────────────────
+  - type: web
+    name: vaultdeal-app
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: .
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: 10000
+
+      # Injected automatically by Render when DB is linked
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vaultdeal-db
+          property: connectionString
+
+      # Steam Web API Key — set manually in Render dashboard
+      - key: STEAM_API_KEY
+        sync: false
+
+      # ITAD API Key — set manually in Render dashboard (optional for Phase 1)
+      - key: ITAD_API_KEY
+        sync: false
+
+      # App base URL — used for OAuth callbacks, emails, etc.
+      - key: APP_BASE_URL
+        sync: false
+
+      # JWT secret for future user auth
+      - key: JWT_SECRET
+        generateValue: true
+
+      # Session secret
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # Future: SendGrid or Resend for price alert emails
+      - key: EMAIL_API_KEY
+        sync: false
+
+      - key: EMAIL_FROM
+        sync: false
+
+  # ─────────────────────────────────────────
+  # Price Sync Worker (Cron Job)
+  # Runs every 3 hours to refresh deal data
+  # ─────────────────────────────────────────
+  - type: cron
+    name: vaultdeal-price-sync
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: .
+    buildCommand: npm install
+    startCommand: node server/jobs/syncPrices.js
+    schedule: "0 */3 * * *"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vaultdeal-db
+          property: connectionString
+      - key: STEAM_API_KEY
+        sync: false
+      - key: ITAD_API_KEY
+        sync: false
+
+databases:
+  # ─────────────────────────────────────────
+  # PostgreSQL (Render Managed)
+  # ─────────────────────────────────────────
+  - name: vaultdeal-db
+    plan: starter
+    region: oregon
+    databaseName: vaultdeal
+    user: vaultdeal_user
