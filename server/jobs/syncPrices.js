@@ -81,17 +81,24 @@ async function upsertGame(deal, steamMeta) {
       ? steamMeta.release_date.date
       : null;
   const metacriticScore = steamMeta?.metacritic?.score ?? null;
-  const reviewScore = steamMeta?.recommendations?.total ?? null;
+  // Steam review score (0–100 positive %) and description come from CheapShark
+  // deal data (steamRatingPercent / steamRatingText), not the Steam appdetails API.
+  const reviewScore = parseInt(deal.steamRatingPercent) || null;
+  const reviewDesc = deal.steamRatingText || null;
   const shortDesc = steamMeta?.short_description ?? null;
+  // Columns populated by future sync phases (not written yet):
+  //   cheapshark_id, description, background_image, screenshots,
+  //   total_reviews, coming_soon, tags, categories, website
   const headerImage = steamMeta?.header_image ?? `https://cdn.akamai.steamstatic.com/steam/apps/${steamAppId}/header.jpg`;
   const isFree = steamMeta?.is_free ?? false;
 
   const { rows } = await db.query(
     `INSERT INTO games (
        steam_app_id, title, slug, short_description, header_image,
-       developers, publishers, release_date, metacritic_score, genres,
+       developers, publishers, release_date, metacritic_score,
+       steam_review_score, steam_review_desc, genres,
        is_free, metadata_fetched_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
      ON CONFLICT (steam_app_id) DO UPDATE SET
        title               = EXCLUDED.title,
        slug                = EXCLUDED.slug,
@@ -101,6 +108,8 @@ async function upsertGame(deal, steamMeta) {
        publishers          = COALESCE(EXCLUDED.publishers, games.publishers),
        release_date        = COALESCE(EXCLUDED.release_date, games.release_date),
        metacritic_score    = COALESCE(EXCLUDED.metacritic_score, games.metacritic_score),
+       steam_review_score  = COALESCE(EXCLUDED.steam_review_score, games.steam_review_score),
+       steam_review_desc   = COALESCE(EXCLUDED.steam_review_desc, games.steam_review_desc),
        genres              = COALESCE(EXCLUDED.genres, games.genres),
        is_free             = EXCLUDED.is_free,
        metadata_fetched_at = NOW(),
@@ -116,6 +125,8 @@ async function upsertGame(deal, steamMeta) {
       publishers,
       releaseDate,
       metacriticScore,
+      reviewScore,
+      reviewDesc,
       genres,
       isFree,
     ]
@@ -143,7 +154,7 @@ async function insertSnapshot(gameId, deal) {
       discountPct,
       isOnSale,
       deal.dealID,
-      `https://www.cheapshark.com/redirect?dealID=${deal.dealID}`,
+      `${CHEAPSHARK_REDIRECT_BASE}?dealID=${deal.dealID}`,
     ]
   );
 }
@@ -151,6 +162,8 @@ async function insertSnapshot(gameId, deal) {
 // ─── update price stats ──────────────────────────────────────────────────────
 
 async function updatePriceStats(gameId) {
+  // NOTE: price_stats.last_sale_date is defined in the schema but not yet populated.
+  // TODO: add MAX(recorded_at) FILTER (WHERE is_on_sale = TRUE) when needed.
   await db.query(
     `INSERT INTO price_stats (game_id, store, all_time_low, all_time_low_date, all_time_high, avg_discount_pct, updated_at)
      SELECT

@@ -5,7 +5,7 @@ services:
   - type: web
     name: vaultdeal-app
     runtime: node
-    plan: starter
+    plan: free
     region: oregon
     rootDir: .
     buildCommand: npm install && npm run build
@@ -60,7 +60,7 @@ services:
   - type: cron
     name: vaultdeal-price-sync
     runtime: node
-    plan: starter
+    plan: free
     region: oregon
     rootDir: .
     buildCommand: cd server && npm install
@@ -83,7 +83,7 @@ databases:
   # PostgreSQL (Render Managed)
   # ─────────────────────────────────────────
   - name: vaultdeal-db
-    plan: starter
+    plan: free
     region: oregon
     databaseName: vaultdeal
     user: vaultdeal_user
