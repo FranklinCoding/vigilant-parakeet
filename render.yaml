@@ -60,7 +60,6 @@ services:
   - type: cron
     name: vaultdeal-price-sync
     runtime: node
-    plan: free
     region: oregon
     rootDir: .
     buildCommand: cd server && npm install
