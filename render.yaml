@@ -63,7 +63,7 @@ services:
     plan: starter
     region: oregon
     rootDir: .
-    buildCommand: npm install
+    buildCommand: cd server && npm install
     startCommand: node server/jobs/syncPrices.js
     schedule: "0 */3 * * *"
     envVars:
