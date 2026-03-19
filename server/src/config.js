@@ -12,12 +12,12 @@ module.exports = {
   corsOrigins: process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',')
     : '*',
-  // Phase 2 — set manually in Render dashboard, not used in Phase 1
-  // steamApiKey: process.env.STEAM_API_KEY,
-  // itadApiKey: process.env.ITAD_API_KEY,
-  // jwtSecret: process.env.JWT_SECRET,
-  // sessionSecret: process.env.SESSION_SECRET,
-  // appBaseUrl: process.env.APP_BASE_URL,
-  // emailApiKey: process.env.EMAIL_API_KEY,
-  // emailFrom: process.env.EMAIL_FROM,
+  // Steam Web API key — required for library/recently-played features
+  // Get one free at: https://steamcommunity.com/dev/apikey
+  steamApiKey: process.env.STEAM_API_KEY || null,
+  // G2A Marketplace API — requires merchant account at https://developers.g2a.com
+  g2aClientId: process.env.G2A_CLIENT_ID || null,
+  g2aClientSecret: process.env.G2A_CLIENT_SECRET || null,
+  // Kinguin API — requires partner account at https://www.kinguin.net/partner
+  kinguinApiKey: process.env.KINGUIN_API_KEY || null,
 };

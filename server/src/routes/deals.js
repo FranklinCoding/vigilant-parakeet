@@ -23,7 +23,10 @@ router.get('/', async (req, res, next) => {
 
     if (genre) {
       filterParams.push(genre);
-      conditions.push(`$${filterParams.length} = ANY(cd.genres)`);
+      // Search both official Steam genres AND user tags so sub-genres resolve correctly
+      conditions.push(
+        `($${filterParams.length} = ANY(cd.genres) OR $${filterParams.length} = ANY(cd.tags))`
+      );
     }
     if (minDiscount) {
       filterParams.push(parseInt(minDiscount));
