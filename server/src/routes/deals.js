@@ -51,6 +51,7 @@ router.get('/', async (req, res, next) => {
       discount: 'cd.discount_pct DESC',
       price: 'cd.price_current ASC',
       title: 'cd.title ASC',
+      rating: 'cd.steam_review_score DESC NULLS LAST',
     };
     const orderBy = orderMap[sort] || orderMap.discount;
 
