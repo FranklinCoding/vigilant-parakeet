@@ -77,6 +77,29 @@ services:
       - key: ITAD_API_KEY
         sync: false
 
+  # ─────────────────────────────────────────
+  # Steam Store Catalog Sync (Cron Job)
+  # Runs every 3 hours — pulls top sellers,
+  # new releases, specials & top-rated from Steam
+  # ─────────────────────────────────────────
+  - type: cron
+    name: vaultdeal-steam-sync
+    runtime: node
+    region: oregon
+    rootDir: .
+    buildCommand: cd server && npm install
+    startCommand: node server/jobs/syncSteamStore.js
+    schedule: "0 */3 * * *"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vaultdeal-db
+          property: connectionString
+      - key: STEAM_API_KEY
+        sync: false
+
 databases:
   # ─────────────────────────────────────────
   # PostgreSQL (Render Managed)

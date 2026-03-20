@@ -1,16 +1,13 @@
 /**
  * syncPrices.js — VaultDeal price sync job
  *
- * Fetches current deals from CheapShark, upserts game metadata, writes
- * price snapshots, then refreshes the current_deals materialized view.
+ * Fetches current deals from CheapShark across multiple pages,
+ * upserts game metadata from Steam, writes price snapshots with
+ * direct Steam store links, then refreshes the materialized view.
  *
  * Run manually:  node server/jobs/syncPrices.js
  * Run via cron:  configured in render.yaml (every 3 hours)
  */
-
-// CheapShark redirect URLs use a different subdomain than the API base URL.
-// See also: config.cheapsharkBaseUrl (api domain)
-const CHEAPSHARK_REDIRECT_BASE = 'https://www.cheapshark.com/redirect';
 
 require('dotenv').config();
 
@@ -18,7 +15,8 @@ const https = require('https');
 const config = require('../src/config');
 const db = require('../src/db');
 
-const CHEAPSHARK_DEALS_URL = `${config.cheapsharkBaseUrl}/deals?storeID=1&pageSize=${config.dealsFetchLimit}&sortBy=Deal+Rating&onSale=1`;
+const PAGE_SIZE = 60;   // CheapShark max per page
+const PAGES_TO_FETCH = 5; // 5 × 60 = 300 games per run
 const STEAM_APP_DETAIL_URL = `${config.steamApiBaseUrl}/appdetails`;
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -26,30 +24,29 @@ const STEAM_APP_DETAIL_URL = `${config.steamApiBaseUrl}/appdetails`;
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     https
-      .get(url, (res) => {
+      .get(url, { timeout: 10000 }, (res) => {
         let raw = '';
         res.on('data', (chunk) => (raw += chunk));
         res.on('end', () => {
-          try {
-            resolve(JSON.parse(raw));
-          } catch (e) {
-            reject(new Error(`JSON parse error for ${url}: ${e.message}`));
-          }
+          try { resolve(JSON.parse(raw)); }
+          catch (e) { reject(new Error(`JSON parse error for ${url}: ${e.message}`)); }
         });
       })
-      .on('error', reject);
+      .on('error', reject)
+      .on('timeout', function () { this.destroy(new Error(`Timeout: ${url}`)); });
   });
 }
 
 function slugify(title) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function steamStoreUrl(steamAppId) {
+  return `https://store.steampowered.com/app/${steamAppId}/`;
 }
 
 // ─── Steam metadata fetch ────────────────────────────────────────────────────
@@ -74,6 +71,7 @@ async function upsertGame(deal, steamMeta) {
   const title = deal.title || steamMeta?.name || 'Unknown';
   const slug = slugify(title);
   const genres = steamMeta?.genres?.map((g) => g.description) ?? [];
+  const tags = steamMeta?.categories?.map((c) => c.description) ?? [];
   const developers = steamMeta?.developers ?? [];
   const publishers = steamMeta?.publishers ?? [];
   const releaseDate =
@@ -81,24 +79,20 @@ async function upsertGame(deal, steamMeta) {
       ? steamMeta.release_date.date
       : null;
   const metacriticScore = steamMeta?.metacritic?.score ?? null;
-  // Steam review score (0–100 positive %) and description come from CheapShark
-  // deal data (steamRatingPercent / steamRatingText), not the Steam appdetails API.
   const reviewScore = parseInt(deal.steamRatingPercent) || null;
   const reviewDesc = deal.steamRatingText || null;
   const shortDesc = steamMeta?.short_description ?? null;
-  // Columns populated by future sync phases (not written yet):
-  //   cheapshark_id, description, background_image, screenshots,
-  //   total_reviews, coming_soon, tags, categories, website
-  const headerImage = steamMeta?.header_image ?? `https://cdn.akamai.steamstatic.com/steam/apps/${steamAppId}/header.jpg`;
+  const headerImage = steamMeta?.header_image
+    ?? `https://cdn.akamai.steamstatic.com/steam/apps/${steamAppId}/header.jpg`;
   const isFree = steamMeta?.is_free ?? false;
 
   const { rows } = await db.query(
     `INSERT INTO games (
        steam_app_id, title, slug, short_description, header_image,
        developers, publishers, release_date, metacritic_score,
-       steam_review_score, steam_review_desc, genres,
+       steam_review_score, steam_review_desc, genres, tags,
        is_free, metadata_fetched_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
      ON CONFLICT (steam_app_id) DO UPDATE SET
        title               = EXCLUDED.title,
        slug                = EXCLUDED.slug,
@@ -111,24 +105,15 @@ async function upsertGame(deal, steamMeta) {
        steam_review_score  = COALESCE(EXCLUDED.steam_review_score, games.steam_review_score),
        steam_review_desc   = COALESCE(EXCLUDED.steam_review_desc, games.steam_review_desc),
        genres              = COALESCE(EXCLUDED.genres, games.genres),
+       tags                = COALESCE(EXCLUDED.tags, games.tags),
        is_free             = EXCLUDED.is_free,
        metadata_fetched_at = NOW(),
        updated_at          = NOW()
      RETURNING id`,
     [
-      steamAppId,
-      title,
-      slug,
-      shortDesc,
-      headerImage,
-      developers,
-      publishers,
-      releaseDate,
-      metacriticScore,
-      reviewScore,
-      reviewDesc,
-      genres,
-      isFree,
+      steamAppId, title, slug, shortDesc, headerImage,
+      developers, publishers, releaseDate, metacriticScore,
+      reviewScore, reviewDesc, genres, tags, isFree,
     ]
   );
 
@@ -138,6 +123,7 @@ async function upsertGame(deal, steamMeta) {
 // ─── insert price snapshot ───────────────────────────────────────────────────
 
 async function insertSnapshot(gameId, deal) {
+  const steamAppId = parseInt(deal.steamAppID);
   const priceCurrent = parseFloat(deal.salePrice);
   const priceRegular = parseFloat(deal.normalPrice);
   const discountPct = parseInt(deal.savings);
@@ -154,7 +140,7 @@ async function insertSnapshot(gameId, deal) {
       discountPct,
       isOnSale,
       deal.dealID,
-      `${CHEAPSHARK_REDIRECT_BASE}?dealID=${deal.dealID}`,
+      steamStoreUrl(steamAppId),  // Direct Steam link — no CheapShark redirect
     ]
   );
 }
@@ -162,13 +148,10 @@ async function insertSnapshot(gameId, deal) {
 // ─── update price stats ──────────────────────────────────────────────────────
 
 async function updatePriceStats(gameId) {
-  // NOTE: price_stats.last_sale_date is defined in the schema but not yet populated.
-  // TODO: add MAX(recorded_at) FILTER (WHERE is_on_sale = TRUE) when needed.
   await db.query(
     `INSERT INTO price_stats (game_id, store, all_time_low, all_time_low_date, all_time_high, avg_discount_pct, updated_at)
      SELECT
-       $1,
-       'steam',
+       $1, 'steam',
        MIN(price_current),
        MIN(recorded_at) FILTER (WHERE price_current = (SELECT MIN(p2.price_current) FROM price_snapshots p2 WHERE p2.game_id = $1 AND p2.store = 'steam')),
        MAX(price_regular),
@@ -192,41 +175,54 @@ async function run() {
   const startedAt = new Date();
   let gamesSync = 0;
   const errors = [];
+  const seen = new Set(); // deduplicate across pages
 
-  console.log('[sync] Starting price sync…');
+  console.log('[sync] Starting CheapShark price sync…');
 
-  let deals;
-  try {
-    deals = await fetchJson(CHEAPSHARK_DEALS_URL);
-  } catch (err) {
-    console.error('[sync] Failed to fetch CheapShark deals:', err.message);
-    await logSync('cheapshark_deals', 'failed', 0, [err.message], startedAt);
-    process.exit(1);
-  }
+  // Fetch multiple pages so we get a much larger catalog
+  for (let page = 0; page < PAGES_TO_FETCH; page++) {
+    const url =
+      `${config.cheapsharkBaseUrl}/deals` +
+      `?storeID=1&pageSize=${PAGE_SIZE}&pageNumber=${page}` +
+      `&sortBy=Deal+Rating&onSale=1`;
 
-  console.log(`[sync] Fetched ${deals.length} deals`);
-
-  for (const deal of deals) {
+    let deals;
     try {
+      deals = await fetchJson(url);
+      if (!Array.isArray(deals) || deals.length === 0) break;
+    } catch (err) {
+      console.error(`[sync] Failed to fetch page ${page}:`, err.message);
+      errors.push(`page_${page}: ${err.message}`);
+      break;
+    }
+
+    console.log(`[sync] Page ${page}: ${deals.length} deals`);
+
+    for (const deal of deals) {
       const steamAppId = parseInt(deal.steamAppID);
       if (isNaN(steamAppId) || steamAppId === 0) continue;
+      if (seen.has(steamAppId)) continue;
+      seen.add(steamAppId);
 
-      // Throttle Steam API requests
-      await sleep(300);
-      const steamMeta = await fetchSteamMeta(steamAppId);
+      try {
+        await sleep(250); // be polite to Steam API
+        const steamMeta = await fetchSteamMeta(steamAppId);
+        const gameId = await upsertGame(deal, steamMeta);
+        if (!gameId) continue;
 
-      const gameId = await upsertGame(deal, steamMeta);
-      if (!gameId) continue;
+        await insertSnapshot(gameId, deal);
+        await updatePriceStats(gameId);
 
-      await insertSnapshot(gameId, deal);
-      await updatePriceStats(gameId);
-
-      gamesSync++;
-      console.log(`[sync] ✓ ${deal.title} (${steamAppId})`);
-    } catch (err) {
-      console.error(`[sync] ✗ ${deal.title}:`, err.message);
-      errors.push(`${deal.title}: ${err.message}`);
+        gamesSync++;
+        console.log(`[sync] ✓ ${deal.title} (${steamAppId})`);
+      } catch (err) {
+        console.error(`[sync] ✗ ${deal.title}:`, err.message);
+        errors.push(`${deal.title}: ${err.message}`);
+      }
     }
+
+    // Small pause between pages
+    if (page < PAGES_TO_FETCH - 1) await sleep(500);
   }
 
   // Refresh materialized view
