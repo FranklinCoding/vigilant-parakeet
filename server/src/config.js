@@ -22,4 +22,10 @@ module.exports = {
   kinguinApiKey: process.env.KINGUIN_API_KEY || null,
   // IsThereAnyDeal API — free key at https://isthereanydeal.com/dev/app/
   itadApiKey: process.env.ITAD_API_KEY || null,
+  // Auth — server public URL (used for Steam OpenID return URL)
+  appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3001',
+  // Auth — frontend URL to redirect to after login (same as appBaseUrl in production)
+  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  // JWT signing secret — auto-generated on Render, set manually in .env
+  jwtSecret: process.env.JWT_SECRET || 'dev-secret-please-change-in-production',
 };

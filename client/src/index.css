@@ -431,15 +431,45 @@ input, select {
   min-width: 200px;
 }
 
-/* ── Nav steam indicator dot ── */
-.nav__steam-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  background: var(--green);
-  border-radius: 50%;
-  margin-left: 5px;
+/* ── Nav steam login button ── */
+.nav__steam-login {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.nav__steam-btn {
+  height: 28px;
+  display: block;
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+
+.nav__steam-btn:hover {
+  opacity: 1;
+}
+
+.nav__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
+  margin-right: 6px;
   vertical-align: middle;
+}
+
+.nav__link--btn {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  padding: 0;
+  color: var(--text-muted);
+  transition: color 0.15s;
+  cursor: pointer;
+}
+
+.nav__link--btn:hover {
+  color: var(--text);
 }
 
 /* ── Owned badge (game page) ── */

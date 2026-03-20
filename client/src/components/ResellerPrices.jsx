@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Component } from 'react';
 import { getResellers } from '../api';
 
 const DRM_LABELS = {
@@ -10,9 +10,15 @@ const DRM_LABELS = {
   epic: 'Epic',
 };
 
-function fmt(val, currency = 'USD') {
+// Safe currency formatter — falls back to plain $ if currency code is invalid
+function fmt(val, currency) {
   if (val == null) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(val);
+  const safeCurrency = /^[A-Z]{3}$/.test(currency || '') ? currency : 'USD';
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: safeCurrency }).format(val);
+  } catch {
+    return `$${Number(val).toFixed(2)}`;
+  }
 }
 
 function CutBadge({ cut }) {
@@ -21,7 +27,7 @@ function CutBadge({ cut }) {
 }
 
 function DrmTags({ drm }) {
-  if (!drm?.length) return null;
+  if (!Array.isArray(drm) || !drm.length) return null;
   return (
     <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
       {drm.map((d) => (
@@ -33,7 +39,28 @@ function DrmTags({ drm }) {
   );
 }
 
-export default function ResellerPrices({ gameId }) {
+// Catches any render crash inside ResellerPrices so the rest of the page stays up
+class ResellerErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { crashed: false, message: '' };
+  }
+  static getDerivedStateFromError(err) {
+    return { crashed: true, message: err?.message || 'Unknown error' };
+  }
+  render() {
+    if (this.state.crashed) {
+      return (
+        <div className="steam-notice">
+          Prices could not be loaded: {this.state.message}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function ResellerPricesInner({ gameId }) {
   const [enabled, setEnabled] = useState(false);
   const [minCut, setMinCut] = useState('0');
   const [country, setCountry] = useState('US');
@@ -42,18 +69,17 @@ export default function ResellerPrices({ gameId }) {
   const [error, setError] = useState(null);
 
   const fetchPrices = useCallback(async () => {
-    if (!enabled) return;
     setLoading(true);
     setError(null);
     try {
       const result = await getResellers(gameId, { minCut, country });
       setData(result);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to fetch prices');
     } finally {
       setLoading(false);
     }
-  }, [enabled, gameId, minCut, country]);
+  }, [gameId, minCut, country]);
 
   useEffect(() => {
     if (enabled) fetchPrices();
@@ -123,20 +149,22 @@ export default function ResellerPrices({ gameId }) {
           </div>
 
           {loading && <div className="spinner" />}
-          {error && <p className="state-msg">Failed to load prices: {error}</p>}
+
+          {!loading && error && (
+            <div className="steam-notice">Failed to load prices: {error}</div>
+          )}
 
           {!loading && !error && data && !data.configured && (
-            <div className="steam-notice">
-              {data.message}
-            </div>
+            <div className="steam-notice">{data.message}</div>
           )}
 
           {!loading && !error && data?.configured && (
             <>
-              {/* History low banner */}
-              {data.historyLow && (
+              {data.historyLow?.price != null && (
                 <div className="itad-history-low">
-                  <span className="itad-history-low__label">All-time low on {data.historyLow.shop}:</span>
+                  <span className="itad-history-low__label">
+                    All-time low{data.historyLow.shop ? ` on ${data.historyLow.shop}` : ''}:
+                  </span>
                   <span className="itad-history-low__price">
                     {fmt(data.historyLow.price, data.historyLow.currency)}
                   </span>
@@ -150,7 +178,7 @@ export default function ResellerPrices({ gameId }) {
                 </div>
               )}
 
-              {data.deals?.length === 0 ? (
+              {!data.deals?.length ? (
                 <p className="state-msg" style={{ padding: '24px 0' }}>
                   {data.message || 'No deals found matching your filters.'}
                 </p>
@@ -171,7 +199,7 @@ export default function ResellerPrices({ gameId }) {
                     {data.deals.map((d, i) => (
                       <tr key={i}>
                         <td style={{ fontWeight: 600 }}>
-                          {d.store}
+                          {d.store || 'Unknown'}
                           {d.voucher && (
                             <span
                               className="reseller-warn-badge"
@@ -189,7 +217,7 @@ export default function ResellerPrices({ gameId }) {
                         <td><CutBadge cut={d.cut} /></td>
                         <td><DrmTags drm={d.drm} /></td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          {d.storeLow != null ? fmt(d.storeLow, d.currency) : '—'}
+                          {fmt(d.storeLow, d.currency)}
                         </td>
                         <td>
                           {d.url && (
@@ -205,13 +233,29 @@ export default function ResellerPrices({ gameId }) {
               )}
 
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-                Prices via <a href="https://isthereanydeal.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-muted)', textDecoration: 'underline' }}>IsThereAnyDeal</a>.
-                Updates may be delayed by a few hours.
+                Prices via{' '}
+                <a
+                  href="https://isthereanydeal.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--text-muted)', textDecoration: 'underline' }}
+                >
+                  IsThereAnyDeal
+                </a>
+                . Updates may be delayed by a few hours.
               </p>
             </>
           )}
         </>
       )}
     </div>
+  );
+}
+
+export default function ResellerPrices({ gameId }) {
+  return (
+    <ResellerErrorBoundary>
+      <ResellerPricesInner gameId={gameId} />
+    </ResellerErrorBoundary>
   );
 }

@@ -192,65 +192,88 @@ router.get('/profile/:steamId', async (req, res, next) => {
 
 // ─── GET /api/steam/library/:steamId ────────────────────────────────────────
 // Returns owned games sorted by all-time playtime descending.
+// Uses Steam Web API if key is configured, falls back to community XML for public profiles.
 router.get('/library/:steamId', async (req, res, next) => {
   try {
     const { steamId } = req.params;
 
-    if (!config.steamApiKey) {
+    // ── Try Steam Web API first (has game icons + 2-week playtime) ──
+    if (config.steamApiKey) {
+      const url =
+        `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/` +
+        `?key=${config.steamApiKey}&steamid=${steamId}` +
+        `&include_appinfo=true&include_played_free_games=true`;
+
+      const { raw, status } = await httpGet(url);
+
+      if (status === 200) {
+        const data = tryParseJson(raw);
+        if (data?.response?.games) {
+          const games = data.response.games
+            .sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0))
+            .map((g) => ({
+              appId: g.appid,
+              name: g.name,
+              playtimeMins: g.playtime_forever || 0,
+              playtime2WeeksMins: g.playtime_2weeks || 0,
+              iconUrl: g.img_icon_url
+                ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg`
+                : null,
+              lastPlayed: g.rtime_last_played
+                ? new Date(g.rtime_last_played * 1000).toISOString()
+                : null,
+            }));
+          return res.json({
+            games,
+            totalGames: games.length,
+            totalPlaytimeMins: games.reduce((s, g) => s + g.playtimeMins, 0),
+          });
+        }
+      }
+    }
+
+    // ── Fallback: Steam community XML (works for public profiles, no key needed) ──
+    // This endpoint returns game list + playtime hours for public libraries
+    const xmlUrl = `https://steamcommunity.com/profiles/${steamId}/games?tab=all&xml=1`;
+    const { raw: xmlRaw, status: xmlStatus } = await httpGet(xmlUrl);
+
+    if (xmlStatus !== 200 || !xmlRaw.includes('<games>')) {
       return res.json({
         games: [],
         totalGames: 0,
         totalPlaytimeMins: 0,
         limited: true,
         message:
-          'A Steam API key is required to view your library. Add STEAM_API_KEY to your .env file. ' +
-          'Get a free key at https://steamcommunity.com/dev/apikey',
+          'Library is private or could not be loaded. Go to Steam → Privacy Settings → set "Game details" to Public.',
       });
     }
 
-    const url =
-      `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/` +
-      `?key=${config.steamApiKey}&steamid=${steamId}` +
-      `&include_appinfo=true&include_played_free_games=true`;
+    // Parse game entries from XML
+    const gameMatches = [...xmlRaw.matchAll(/<game>([\s\S]*?)<\/game>/g)];
+    const games = gameMatches
+      .map((m) => {
+        const block = m[1];
+        const appId = parseInt(block.match(/<appID>(\d+)<\/appID>/)?.[1] || '0');
+        const name = block.match(/<name><!\[CDATA\[(.+?)\]\]><\/name>/)?.[1]
+          || block.match(/<name>(.+?)<\/name>/)?.[1]
+          || 'Unknown';
+        // hoursOnRecord is formatted like "1,234" or "0.5"
+        const hoursStr = block.match(/<hoursOnRecord>([\d.,]+)<\/hoursOnRecord>/)?.[1] || '0';
+        const hours = parseFloat(hoursStr.replace(/,/g, '')) || 0;
+        const playtimeMins = Math.round(hours * 60);
+        const logo = block.match(/<logo>(.+?)<\/logo>/)?.[1] || null;
 
-    const { raw, status } = await httpGet(url);
-
-    if (status !== 200) {
-      return res.status(502).json({ error: 'Steam API returned an error fetching library' });
-    }
-
-    const data = tryParseJson(raw);
-
-    if (!data?.response?.games) {
-      return res.json({
-        games: [],
-        totalGames: 0,
-        totalPlaytimeMins: 0,
-        limited: true,
-        message:
-          'Library is private or empty. Make sure your Steam library is set to public.',
-      });
-    }
-
-    const games = data.response.games
-      .sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0))
-      .map((g) => ({
-        appId: g.appid,
-        name: g.name,
-        playtimeMins: g.playtime_forever || 0,
-        playtime2WeeksMins: g.playtime_2weeks || 0,
-        iconUrl: g.img_icon_url
-          ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg`
-          : null,
-        lastPlayed: g.rtime_last_played
-          ? new Date(g.rtime_last_played * 1000).toISOString()
-          : null,
-      }));
+        return { appId, name, playtimeMins, playtime2WeeksMins: 0, iconUrl: logo, lastPlayed: null };
+      })
+      .filter((g) => g.appId > 0)
+      .sort((a, b) => b.playtimeMins - a.playtimeMins);
 
     res.json({
       games,
       totalGames: games.length,
       totalPlaytimeMins: games.reduce((s, g) => s + g.playtimeMins, 0),
+      limited: false,
+      note: 'Loaded via public profile (no API key). Recently-played data unavailable.',
     });
   } catch (err) {
     next(err);
