@@ -319,6 +319,26 @@ input, select {
   color: var(--text-muted);
 }
 
+.tag--clickable {
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tag--clickable:hover {
+  background: var(--bg-card);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tag--clickable.tag--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.tag--clickable.tag--active:hover {
+  opacity: 0.85;
+}
+
 .game-section {
   margin-bottom: 28px;
 }

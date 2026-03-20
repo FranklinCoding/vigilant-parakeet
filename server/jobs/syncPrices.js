@@ -85,10 +85,11 @@ async function upsertGame(deal, steamMeta) {
   // deal data (steamRatingPercent / steamRatingText), not the Steam appdetails API.
   const reviewScore = parseInt(deal.steamRatingPercent) || null;
   const reviewDesc = deal.steamRatingText || null;
+  const totalReviews = parseInt(deal.steamRatingCount) || null;
   const shortDesc = steamMeta?.short_description ?? null;
   // Columns populated by future sync phases (not written yet):
   //   cheapshark_id, description, background_image, screenshots,
-  //   total_reviews, coming_soon, tags, categories, website
+  //   coming_soon, tags, categories, website
   const headerImage = steamMeta?.header_image ?? `https://cdn.akamai.steamstatic.com/steam/apps/${steamAppId}/header.jpg`;
   const isFree = steamMeta?.is_free ?? false;
 
@@ -96,9 +97,9 @@ async function upsertGame(deal, steamMeta) {
     `INSERT INTO games (
        steam_app_id, title, slug, short_description, header_image,
        developers, publishers, release_date, metacritic_score,
-       steam_review_score, steam_review_desc, genres,
+       steam_review_score, steam_review_desc, total_reviews, genres,
        is_free, metadata_fetched_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
      ON CONFLICT (steam_app_id) DO UPDATE SET
        title               = EXCLUDED.title,
        slug                = EXCLUDED.slug,
@@ -110,6 +111,7 @@ async function upsertGame(deal, steamMeta) {
        metacritic_score    = COALESCE(EXCLUDED.metacritic_score, games.metacritic_score),
        steam_review_score  = COALESCE(EXCLUDED.steam_review_score, games.steam_review_score),
        steam_review_desc   = COALESCE(EXCLUDED.steam_review_desc, games.steam_review_desc),
+       total_reviews       = COALESCE(EXCLUDED.total_reviews, games.total_reviews),
        genres              = COALESCE(EXCLUDED.genres, games.genres),
        is_free             = EXCLUDED.is_free,
        metadata_fetched_at = NOW(),
@@ -127,6 +129,7 @@ async function upsertGame(deal, steamMeta) {
       metacriticScore,
       reviewScore,
       reviewDesc,
+      totalReviews,
       genres,
       isFree,
     ]

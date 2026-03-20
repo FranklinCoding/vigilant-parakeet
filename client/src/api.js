@@ -48,6 +48,12 @@ export function getSteamReplay(steamId, year) {
   return request(`/steam/replay/${steamId}/${year}`);
 }
 
+// ─── Recommendations ──────────────────────────────────────────────────────────
+
+export function getRecommendations(steamId) {
+  return request(`/recommendations?steamId=${encodeURIComponent(steamId)}`);
+}
+
 // ─── Resellers ────────────────────────────────────────────────────────────────
 
 export function getResellers(gameId, params = {}) {

@@ -8,6 +8,7 @@ const dealsRouter = require('./routes/deals');
 const gamesRouter = require('./routes/games');
 const steamRouter = require('./routes/steam');
 const resellersRouter = require('./routes/resellers');
+const recommendationsRouter = require('./routes/recommendations');
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use('/api/deals', dealsRouter);
 app.use('/api/games', gamesRouter);
 app.use('/api/steam', steamRouter);
 app.use('/api/resellers', resellersRouter);
+app.use('/api/recommendations', recommendationsRouter);
 
 // Serve React build in production
 if (config.nodeEnv === 'production') {
