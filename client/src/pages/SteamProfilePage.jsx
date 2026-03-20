@@ -11,8 +11,13 @@ import {
 } from '../api';
 import DealCard from '../components/DealCard';
 
-// localStorage key for the anonymous (no-login) linked profile
 const LS_ANON_KEY = 'vaultdeal_steam_profile';
+
+const SteamIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.187.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.718L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.252 0-2.265-1.014-2.265-2.265z"/>
+  </svg>
+);
 
 function fmtHours(mins) {
   if (!mins) return '0h';
@@ -25,8 +30,12 @@ function GameRow({ game }) {
   return (
     <div className="steam-game-row">
       {game.iconUrl ? (
-        <img className="steam-game-row__icon" src={game.iconUrl} alt={game.name}
-          onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        <img
+          className="steam-game-row__icon"
+          src={game.iconUrl}
+          alt={game.name}
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
       ) : (
         <div className="steam-game-row__icon steam-game-row__icon--placeholder" />
       )}
@@ -50,7 +59,9 @@ function ReplaySection({ steamId, year }) {
       .finally(() => setLoading(false));
   }, [steamId, year]);
 
-  if (loading) return <div className="spinner" style={{ width: 20, height: 20, margin: '8px 0' }} />;
+  if (loading) {
+    return <div className="spinner" style={{ width: 24, height: 24, margin: '10px 0', borderWidth: 2 }} />;
+  }
 
   if (!data?.available) {
     return (
@@ -66,7 +77,11 @@ function ReplaySection({ steamId, year }) {
   const topGame = r?.top_game?.game_name || r?.highlights?.[0]?.game_name || null;
 
   if (!totalMinutes && !gamesPlayed && !topGame) {
-    return <p className="steam-replay__unavail">Year in Review data was returned but contains no summary stats yet.</p>;
+    return (
+      <p className="steam-replay__unavail">
+        Year in Review data was returned but contains no summary stats yet.
+      </p>
+    );
   }
 
   return (
@@ -74,7 +89,9 @@ function ReplaySection({ steamId, year }) {
       {totalMinutes != null && (
         <div className="stat-box">
           <div className="stat-box__label">{year} Total Playtime</div>
-          <div className="stat-box__value">{fmtHours(totalMinutes)}</div>
+          <div className="stat-box__value" style={{ color: 'var(--accent)' }}>
+            {fmtHours(totalMinutes)}
+          </div>
         </div>
       )}
       {gamesPlayed != null && (
@@ -86,19 +103,16 @@ function ReplaySection({ steamId, year }) {
       {topGame && (
         <div className="stat-box">
           <div className="stat-box__label">Most Played</div>
-          <div className="stat-box__value" style={{ fontSize: 14 }}>{topGame}</div>
+          <div className="stat-box__value" style={{ fontSize: 16, lineHeight: 1.3 }}>{topGame}</div>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
-
 export default function SteamProfilePage() {
   const { user } = useAuth();
 
-  // Determine which Steam ID to use: logged-in user takes priority
   const [anonProfile, setAnonProfile] = useState(() => {
     try { return JSON.parse(localStorage.getItem(LS_ANON_KEY)) || null; }
     catch { return null; }
@@ -108,12 +122,10 @@ export default function SteamProfilePage() {
   const activePersonaName = user?.personaName || anonProfile?.personaName || null;
   const activeAvatarUrl = user?.avatarUrl || anonProfile?.avatarUrl || null;
 
-  // Anonymous link form (only shown when not logged in)
   const [inputUrl, setInputUrl] = useState('');
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState(null);
 
-  // Library + recently played
   const [library, setLibrary] = useState(null);
   const [libLoading, setLibLoading] = useState(false);
   const [recent, setRecent] = useState(null);
@@ -146,7 +158,6 @@ export default function SteamProfilePage() {
     if (activeSteamId) fetchData(activeSteamId);
   }, [activeSteamId, fetchData]);
 
-  // ── Anonymous link handler ──────────────────────────────────────────────────
   async function handleLink(e) {
     e.preventDefault();
     if (!inputUrl.trim()) return;
@@ -180,75 +191,81 @@ export default function SteamProfilePage() {
     setRecDeals([]);
   }
 
-  // ── Not linked and not logged in ───────────────────────────────────────────
+  // ── Not connected ──────────────────────────────────────────────────────────
   if (!activeSteamId) {
     return (
       <div className="page">
-        <Link to="/" style={{ fontSize: 13, color: 'var(--text-muted)', display: 'inline-block', marginBottom: 20 }}>
-          ← Back to deals
-        </Link>
+        <Link to="/" className="back-link">← Back to deals</Link>
         <h1 className="page__title">Steam Profile</h1>
 
-        {/* Preferred: log in */}
-        <div className="steam-link-box" style={{ marginBottom: 20 }}>
-          <p className="steam-link-box__intro">
-            <strong>Sign in with Steam</strong> to automatically load your library,
-            playtime, recently played games, and Year in Review data.
-            No password stored — Steam handles all authentication.
-          </p>
-          <a href="/api/auth/steam" className="btn-steam">
-            <svg className="btn-steam__icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.187.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.718L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.252 0-2.265-1.014-2.265-2.265z"/>
-            </svg>
-            Sign in with Steam
-          </a>
-        </div>
+        <div className="steam-connect-split">
+          {/* Login option */}
+          <div className="steam-link-box">
+            <div className="steam-link-box__title">Sign in with Steam</div>
+            <p className="steam-link-box__intro">
+              Automatically load your library, playtime, recently played games,
+              and Year in Review. No password stored — Steam handles all authentication.
+            </p>
+            <a href="/api/auth/steam" className="btn-steam">
+              <SteamIcon className="btn-steam__icon" />
+              Sign in with Steam
+            </a>
+          </div>
 
-        {/* Alternative: paste URL (read-only, public profiles only) */}
-        <div className="steam-link-box">
-          <p className="steam-link-box__intro">
-            Or paste your <strong>public</strong> Steam profile URL to view stats without logging in.
-            Library and recently-played data requires your profile to be set to Public.
-          </p>
-          <form className="steam-link-box__form" onSubmit={handleLink}>
-            <input
-              className="filters__input steam-link-box__input"
-              type="url"
-              placeholder="https://steamcommunity.com/id/yourname"
-              value={inputUrl}
-              onChange={(e) => setInputUrl(e.target.value)}
-              disabled={resolving}
-            />
-            <button className="btn-primary" type="submit" disabled={resolving || !inputUrl.trim()}>
-              {resolving ? 'Resolving…' : 'Link Profile'}
-            </button>
-          </form>
-          {resolveError && <p className="steam-link-box__error">{resolveError}</p>}
-          <p className="steam-link-box__note">
-            Your Steam ID is only stored in your browser — nothing is sent to our servers.
-          </p>
+          <div className="steam-divider">or</div>
+
+          {/* Anonymous link option */}
+          <div className="steam-link-box">
+            <div className="steam-link-box__title">Link Public Profile</div>
+            <p className="steam-link-box__intro">
+              Paste your <strong>public</strong> Steam profile URL to view stats without logging in.
+              Library data requires your profile to be set to Public.
+            </p>
+            <form className="steam-link-box__form" onSubmit={handleLink}>
+              <input
+                className="filters__input steam-link-box__input"
+                type="url"
+                placeholder="https://steamcommunity.com/id/yourname"
+                value={inputUrl}
+                onChange={(e) => setInputUrl(e.target.value)}
+                disabled={resolving}
+              />
+              <button className="btn-primary" type="submit" disabled={resolving || !inputUrl.trim()}>
+                {resolving ? 'Resolving…' : 'Link'}
+              </button>
+            </form>
+            {resolveError && <p className="steam-link-box__error">{resolveError}</p>}
+            <p className="steam-link-box__note">
+              Your Steam ID is only stored in your browser — nothing sent to our servers.
+            </p>
+          </div>
         </div>
       </div>
     );
   }
 
-  // ── Profile is loaded (logged-in OR anonymous link) ────────────────────────
+  // ── Profile loaded ─────────────────────────────────────────────────────────
   return (
     <div className="page">
-      <Link to="/" style={{ fontSize: 13, color: 'var(--text-muted)', display: 'inline-block', marginBottom: 20 }}>
-        ← Back to deals
-      </Link>
-      <h1 className="page__title">Steam Profile</h1>
+      <Link to="/" className="back-link">← Back to deals</Link>
 
       {/* Profile card */}
       <div className="steam-profile-card">
         {activeAvatarUrl && (
-          <img className="steam-profile-card__avatar" src={activeAvatarUrl} alt={activePersonaName} />
+          <img
+            className="steam-profile-card__avatar"
+            src={activeAvatarUrl}
+            alt={activePersonaName}
+          />
         )}
         <div className="steam-profile-card__info">
           <div className="steam-profile-card__name">
             {activePersonaName}
-            {user && <span className="owned-badge" style={{ background: 'var(--accent)' }}>Logged in</span>}
+            {user && (
+              <span className="owned-badge badge--accent" style={{ fontSize: 9 }}>
+                Logged in
+              </span>
+            )}
           </div>
           <div className="steam-profile-card__id">Steam ID: {activeSteamId}</div>
           {library && !library.limited && (
@@ -271,8 +288,10 @@ export default function SteamProfilePage() {
 
       {/* Recently Played */}
       <div className="game-section">
-        <div className="game-section__title">Recently Played (Last 2 Weeks)</div>
-        {recLoading && <div className="spinner" style={{ width: 20, height: 20, margin: '12px 0' }} />}
+        <div className="game-section__title">Recently Played — Last 2 Weeks</div>
+        {recLoading && (
+          <div className="spinner" style={{ width: 24, height: 24, margin: '12px 0', borderWidth: 2 }} />
+        )}
         {!recLoading && recent?.games?.length > 0 && (
           <div className="steam-game-list">
             {recent.games.map((g) => (
@@ -281,7 +300,7 @@ export default function SteamProfilePage() {
           </div>
         )}
         {!recLoading && !recent?.games?.length && (
-          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+          <p className="steam-replay__unavail">
             {library?.limited
               ? 'Sign in with Steam or make your profile public to see recently played games.'
               : 'No games played in the last 2 weeks.'}
@@ -289,12 +308,12 @@ export default function SteamProfilePage() {
         )}
       </div>
 
-      {/* Top Games All-Time */}
+      {/* Top Games */}
       {!library?.limited && library?.games?.length > 0 && (
         <div className="game-section">
           <div className="game-section__title">Top Games by All-Time Playtime</div>
           {libLoading ? (
-            <div className="spinner" style={{ width: 20, height: 20, margin: '12px 0' }} />
+            <div className="spinner" style={{ width: 24, height: 24, margin: '12px 0', borderWidth: 2 }} />
           ) : (
             <div className="steam-game-list">
               {library.games.slice(0, 10).map((g) => (
@@ -319,12 +338,16 @@ export default function SteamProfilePage() {
       {recDeals.length > 0 && (
         <div className="game-section">
           <div className="game-section__title">Deals You Might Like</div>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
             Highly-rated games currently on sale.
           </p>
           <div className="deal-grid">
-            {recDeals.map((deal) => (
-              <DealCard key={`${deal.game_id}-${deal.store}`} deal={deal} />
+            {recDeals.map((deal, i) => (
+              <DealCard
+                key={`${deal.game_id}-${deal.store}`}
+                deal={deal}
+                style={{ animationDelay: `${i * 0.05}s` }}
+              />
             ))}
           </div>
         </div>

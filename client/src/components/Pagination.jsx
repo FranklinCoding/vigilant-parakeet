@@ -11,9 +11,7 @@ export default function Pagination({ page, total, limit, onChange }) {
       >
         ← Prev
       </button>
-      <span className="pagination__info">
-        Page {page} of {totalPages}
-      </span>
+      <span className="pagination__info">Page {page} of {totalPages}</span>
       <button
         className="pagination__btn"
         disabled={page >= totalPages}
