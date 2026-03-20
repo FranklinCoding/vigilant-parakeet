@@ -1,14 +1,12 @@
 /**
- * resellers.js — VaultDeal key reseller aggregator
+ * resellers.js — VaultDeal price comparison via IsThereAnyDeal API
  *
- * Fetches marketplace listings from G2A and Kinguin for a given game.
- * Returns top 3 sellers per site, filterable by rating and listing type.
+ * Uses ITAD to fetch current prices for a game across 30+ stores
+ * including Fanatical, GreenManGaming, Humble, GamersGate, GOG, and more.
  *
- * Required env vars:
- *   G2A_CLIENT_ID + G2A_CLIENT_SECRET  — https://developers.g2a.com
- *   KINGUIN_API_KEY                    — https://www.kinguin.net/partner
+ * Required env var: ITAD_API_KEY (free at https://isthereanydeal.com/dev/app/)
  *
- * Routes degrade gracefully when API keys are absent.
+ * ITAD API v2 docs: https://docs.isthereanydeal.com/
  */
 
 const { Router } = require('express');
@@ -18,306 +16,179 @@ const db = require('../db');
 
 const router = Router();
 
+const ITAD_BASE = 'https://api.isthereanydeal.com';
+
 // ─── http helpers ─────────────────────────────────────────────────────────────
 
-function httpRequest(url, options = {}) {
+function httpGet(url, headers = {}) {
   return new Promise((resolve, reject) => {
-    const { method = 'GET', body, headers = {} } = options;
     const parsed = new URL(url);
-    const bodyStr = body
-      ? typeof body === 'string'
-        ? body
-        : JSON.stringify(body)
-      : null;
-
-    const reqOptions = {
+    const opts = {
       hostname: parsed.hostname,
       path: parsed.pathname + parsed.search,
-      method,
-      headers: {
-        'User-Agent': 'VaultDeal/1.0',
-        Accept: 'application/json',
-        ...headers,
-        ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
-      },
+      method: 'GET',
+      headers: { 'User-Agent': 'VaultDeal/1.0', Accept: 'application/json', ...headers },
       timeout: 10000,
     };
-
-    const req = https.request(reqOptions, (res) => {
+    https.request(opts, (res) => {
       let raw = '';
       res.on('data', (c) => (raw += c));
       res.on('end', () => {
-        try {
-          resolve({ status: res.statusCode, data: JSON.parse(raw) });
-        } catch {
-          resolve({ status: res.statusCode, data: null, raw });
-        }
+        try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
+        catch { resolve({ status: res.statusCode, data: null }); }
+      });
+    })
+    .on('error', reject)
+    .on('timeout', function () { this.destroy(new Error('ITAD request timed out')); })
+    .end();
+  });
+}
+
+function httpPost(url, body, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const bodyStr = JSON.stringify(body);
+    const opts = {
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      headers: {
+        'User-Agent': 'VaultDeal/1.0',
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+        ...headers,
+      },
+      timeout: 10000,
+    };
+    const req = https.request(opts, (res) => {
+      let raw = '';
+      res.on('data', (c) => (raw += c));
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
+        catch { resolve({ status: res.statusCode, data: null }); }
       });
     });
-
     req.on('error', reject);
-    req.on('timeout', function () {
-      this.destroy(new Error('Reseller API request timed out'));
-    });
-    if (bodyStr) req.write(bodyStr);
+    req.on('timeout', function () { this.destroy(new Error('ITAD request timed out')); });
+    req.write(bodyStr);
     req.end();
   });
 }
 
-// ─── G2A ─────────────────────────────────────────────────────────────────────
+// ─── ITAD helpers ─────────────────────────────────────────────────────────────
 
-let g2aTokenCache = null;
-let g2aTokenExpiry = 0;
-
-async function getG2AToken() {
-  if (g2aTokenCache && Date.now() < g2aTokenExpiry) return g2aTokenCache;
-  if (!config.g2aClientId || !config.g2aClientSecret) return null;
-
-  const body = `grant_type=client_credentials&client_id=${encodeURIComponent(config.g2aClientId)}&client_secret=${encodeURIComponent(config.g2aClientSecret)}`;
-
-  const { data } = await httpRequest(
-    'https://www.g2a.com/integration/v1/authorization/token',
-    {
-      method: 'POST',
-      body,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    }
-  );
-
-  if (data?.access_token) {
-    g2aTokenCache = data.access_token;
-    g2aTokenExpiry = Date.now() + (data.expires_in || 3600) * 1000 - 60_000;
-    return g2aTokenCache;
-  }
-  return null;
+// Step 1: Resolve a Steam App ID to an ITAD game ID
+async function lookupItadId(steamAppId, key) {
+  const url = `${ITAD_BASE}/games/lookup/v1?key=${key}&appid=${steamAppId}`;
+  const { status, data } = await httpGet(url);
+  if (status !== 200 || !data?.game?.id) return null;
+  return data.game.id;
 }
 
-async function fetchG2AListings(gameTitle, steamAppId, opts) {
-  const { includeAccounts = false, minRating = 0, limit = 3 } = opts;
-
-  if (!config.g2aClientId || !config.g2aClientSecret) {
-    return {
-      available: false,
-      configured: false,
-      reason:
-        'G2A API credentials not configured. Add G2A_CLIENT_ID and G2A_CLIENT_SECRET to your environment.',
-      sellers: [],
-    };
-  }
-
-  const token = await getG2AToken();
-  if (!token) {
-    return { available: false, configured: true, reason: 'G2A authentication failed', sellers: [] };
-  }
-
-  // Search for matching product
-  const searchQuery = steamAppId
-    ? `appid:${steamAppId} OR ${gameTitle}`
-    : gameTitle;
-  const { data: searchData, status: searchStatus } = await httpRequest(
-    `https://www.g2a.com/integration/public/v1/products?search=${encodeURIComponent(gameTitle)}&platform=steam`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-
-  if (searchStatus !== 200 || !searchData?.docs?.length) {
-    return { available: true, configured: true, sellers: [] };
-  }
-
-  // Use the first/best matching product
-  const product = searchData.docs[0];
-
-  // Fetch individual seller auctions for that product
-  const { data: auctionsData, status: auctionsStatus } = await httpRequest(
-    `https://www.g2a.com/integration/public/v1/products/${product.id}/auctions`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-
-  if (auctionsStatus !== 200 || !auctionsData?.auctions?.length) {
-    return { available: true, configured: true, sellers: [] };
-  }
-
-  const sellers = auctionsData.auctions
-    .filter((a) => {
-      const type = (a.type || 'Key').toLowerCase();
-      if (!includeAccounts && type === 'account') return false;
-      if (minRating > 0 && (a.sellerRating || 0) < minRating) return false;
-      return true;
-    })
-    .sort((a, b) => (a.price || 999) - (b.price || 999))
-    .slice(0, limit)
-    .map((a) => ({
-      sellerName: a.merchantName || 'Unknown Seller',
-      price: parseFloat(a.price) || 0,
-      currency: (a.currency || 'USD').toUpperCase(),
-      rating: a.sellerRating != null ? parseFloat(a.sellerRating) : null,
-      positiveReviews: a.sellerPositiveFeedbacks ?? null,
-      negativeReviews: a.sellerNegativeFeedbacks ?? null,
-      type: a.type || 'Key',
-      qty: a.qty ?? null,
-      region: a.regionName || 'Global',
-      url: product.url || `https://www.g2a.com/search?query=${encodeURIComponent(gameTitle)}`,
-    }));
-
-  return {
-    available: true,
-    configured: true,
-    productName: product.name,
-    sellers,
-  };
+// Step 2: Get current prices for an ITAD game ID across all stores
+async function getPrices(itadId, key, country = 'US') {
+  const url = `${ITAD_BASE}/games/prices/v2?key=${key}&country=${country}&deals=1`;
+  const { status, data } = await httpPost(url, [itadId]);
+  if (status !== 200 || !Array.isArray(data) || !data.length) return [];
+  return data[0]?.deals || [];
 }
 
-// ─── Kinguin ─────────────────────────────────────────────────────────────────
-
-async function fetchKinguinListings(gameTitle, steamAppId, opts) {
-  const { includeAccounts = false, minRating = 0, limit = 3 } = opts;
-
-  if (!config.kinguinApiKey) {
-    return {
-      available: false,
-      configured: false,
-      reason:
-        'Kinguin API key not configured. Add KINGUIN_API_KEY to your environment.',
-      sellers: [],
-    };
-  }
-
-  // Search for the product — prefer Steam App ID match
-  let searchUrl = `https://api.kinguin.net/integration/v2/products?name=${encodeURIComponent(gameTitle)}&platform=steam&sortBy=cheapest&limit=5`;
-  if (steamAppId) searchUrl += `&steam=${steamAppId}`;
-
-  const { data: searchData, status: searchStatus } = await httpRequest(searchUrl, {
-    headers: { 'X-Api-Key': config.kinguinApiKey },
-  });
-
-  if (searchStatus !== 200 || !searchData?.products?.length) {
-    return { available: true, configured: true, sellers: [] };
-  }
-
-  const product = searchData.products[0];
-
-  // Fetch individual seller offers
-  const { data: offersData, status: offersStatus } = await httpRequest(
-    `https://api.kinguin.net/integration/v2/offers?productId=${product.productId}&sortBy=cheapest&limit=10`,
-    { headers: { 'X-Api-Key': config.kinguinApiKey } }
-  );
-
-  // If no granular offers, fall back to product-level listing
-  if (offersStatus !== 200 || !offersData?.offers?.length) {
-    if (!includeAccounts && product.productType === 'account') {
-      return { available: true, configured: true, sellers: [] };
-    }
-    return {
-      available: true,
-      configured: true,
-      productName: product.name,
-      sellers: [
-        {
-          sellerName: 'Kinguin Marketplace',
-          price: parseFloat(product.price) || 0,
-          currency: (product.currency || 'USD').toUpperCase(),
-          rating: null,
-          positiveReviews: null,
-          negativeReviews: null,
-          type: product.productType || 'Key',
-          qty: product.qty ?? null,
-          region: product.regionName || 'GLOBAL',
-          url: `https://www.kinguin.net/category/${product.productId}`,
-        },
-      ],
-    };
-  }
-
-  const sellers = offersData.offers
-    .filter((o) => {
-      const type = (o.productType || 'key').toLowerCase();
-      if (!includeAccounts && type === 'account') return false;
-      if (minRating > 0 && (o.merchantRating || 0) < minRating) return false;
-      return true;
-    })
-    .sort((a, b) => (a.price || 999) - (b.price || 999))
-    .slice(0, limit)
-    .map((o) => ({
-      sellerName: o.merchantName || 'Kinguin Merchant',
-      price: parseFloat(o.price) || 0,
-      currency: (o.currency || 'USD').toUpperCase(),
-      rating: o.merchantRating != null ? parseFloat(o.merchantRating) : null,
-      positiveReviews: null,
-      negativeReviews: null,
-      type: o.productType || 'Key',
-      qty: o.qty ?? null,
-      region: o.regionName || 'GLOBAL',
-      url: `https://www.kinguin.net/category/${product.productId}`,
-    }));
-
+// Step 3: Get historical low prices for context
+async function getHistoryLow(itadId, key, country = 'US') {
+  const url = `${ITAD_BASE}/games/historylow/v1?key=${key}&country=${country}`;
+  const { status, data } = await httpPost(url, [itadId]);
+  if (status !== 200 || !Array.isArray(data) || !data.length) return null;
+  const entry = data[0];
+  if (!entry?.low) return null;
   return {
-    available: true,
-    configured: true,
-    productName: product.name,
-    sellers,
+    price: entry.low.amount,
+    currency: entry.low.currency,
+    shop: entry.low.shop?.name || null,
+    date: entry.low.timestamp || null,
   };
 }
 
 // ─── GET /api/resellers/:gameId ───────────────────────────────────────────────
 // Query params:
-//   sites         — comma-separated: "g2a,kinguin" (default: both)
-//   includeAccounts — "true" to include account listings (default: false)
-//   minRating     — float 0–5, minimum seller rating (default: 0)
+//   country    — ISO country code for pricing (default: US)
+//   minCut     — minimum discount % to include (default: 0)
+//   limit      — max deals to return (default: 10)
 router.get('/:gameId', async (req, res, next) => {
   try {
     const { gameId } = req.params;
-    const {
-      sites = 'g2a,kinguin',
-      includeAccounts = 'false',
-      minRating = '0',
-    } = req.query;
+    const { country = 'US', minCut = '0', limit = '10' } = req.query;
 
-    const opts = {
-      includeAccounts: includeAccounts === 'true',
-      minRating: Math.max(0, Math.min(5, parseFloat(minRating) || 0)),
-      limit: 3,
-    };
+    if (!config.itadApiKey) {
+      return res.json({
+        configured: false,
+        message:
+          'IsThereAnyDeal API key not configured. Add ITAD_API_KEY to your .env file. ' +
+          'Get a free key at https://isthereanydeal.com/dev/app/',
+        deals: [],
+        historyLow: null,
+      });
+    }
 
-    const requestedSites = sites
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean);
-
-    // Look up the game
+    // Look up the game in our DB
     const { rows } = await db.query(
       'SELECT id, title, steam_app_id FROM games WHERE id = $1',
       [parseInt(gameId)]
     );
-
     if (!rows.length) return res.status(404).json({ error: 'Game not found' });
     const game = rows[0];
 
-    // Fetch from each requested site in parallel
-    const results = {};
-    const fetches = [];
-
-    if (requestedSites.includes('g2a')) {
-      fetches.push(
-        fetchG2AListings(game.title, game.steam_app_id, opts)
-          .then((d) => { results.g2a = d; })
-          .catch((err) => { results.g2a = { available: false, configured: true, reason: err.message, sellers: [] }; })
-      );
+    if (!game.steam_app_id) {
+      return res.json({ configured: true, deals: [], historyLow: null, message: 'No Steam App ID for this game.' });
     }
 
-    if (requestedSites.includes('kinguin')) {
-      fetches.push(
-        fetchKinguinListings(game.title, game.steam_app_id, opts)
-          .then((d) => { results.kinguin = d; })
-          .catch((err) => { results.kinguin = { available: false, configured: true, reason: err.message, sellers: [] }; })
-      );
+    // Resolve to ITAD ID
+    const itadId = await lookupItadId(game.steam_app_id, config.itadApiKey);
+    if (!itadId) {
+      return res.json({
+        configured: true,
+        deals: [],
+        historyLow: null,
+        message: 'Game not found in IsThereAnyDeal database.',
+      });
     }
 
-    await Promise.all(fetches);
+    // Fetch prices and history low in parallel
+    const [rawDeals, historyLow] = await Promise.all([
+      getPrices(itadId, config.itadApiKey, country),
+      getHistoryLow(itadId, config.itadApiKey, country),
+    ]);
+
+    const cutThreshold = parseInt(minCut) || 0;
+    const maxResults = Math.min(parseInt(limit) || 10, 30);
+
+    const deals = rawDeals
+      .filter((d) => (d.cut || 0) >= cutThreshold)
+      .sort((a, b) => (a.price?.amount || 999) - (b.price?.amount || 999))
+      .slice(0, maxResults)
+      .map((d) => ({
+        store: d.shop?.name || 'Unknown Store',
+        storeId: d.shop?.id || null,
+        price: d.price?.amount ?? null,
+        regular: d.regular?.amount ?? null,
+        cut: d.cut || 0,
+        currency: d.price?.currency || 'USD',
+        storeLow: d.storeLow?.amount ?? null,
+        voucher: d.voucher || null,
+        drm: d.drm || [],
+        url: d.url || null,
+        expiry: d.expiry || null,
+      }));
 
     res.json({
+      configured: true,
       gameId: game.id,
       title: game.title,
       steamAppId: game.steam_app_id,
-      resellers: results,
+      itadId,
+      deals,
+      historyLow,
+      country,
     });
   } catch (err) {
     next(err);

@@ -20,4 +20,6 @@ module.exports = {
   g2aClientSecret: process.env.G2A_CLIENT_SECRET || null,
   // Kinguin API — requires partner account at https://www.kinguin.net/partner
   kinguinApiKey: process.env.KINGUIN_API_KEY || null,
+  // IsThereAnyDeal API — free key at https://isthereanydeal.com/dev/app/
+  itadApiKey: process.env.ITAD_API_KEY || null,
 };
