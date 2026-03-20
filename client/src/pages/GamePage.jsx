@@ -29,8 +29,6 @@ export default function GamePage() {
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Check if this game is in the user's Steam library
   const [libraryInfo, setLibraryInfo] = useState(null);
 
   useEffect(() => {
@@ -48,7 +46,6 @@ export default function GamePage() {
       const stored = localStorage.getItem(LS_KEY);
       if (!stored) return;
       const profile = JSON.parse(stored);
-      // Library data is stored separately; fetch from LS cache if present
       const libKey = `vaultdeal_library_${profile.steamId}`;
       const libStored = localStorage.getItem(libKey);
       if (!libStored) return;
@@ -58,8 +55,14 @@ export default function GamePage() {
     } catch {}
   }, [game?.steam_app_id]);
 
-  if (loading) return <div className="spinner" style={{ marginTop: 60 }} />;
-  if (error) return <p className="state-msg">Error: {error}</p>;
+  if (loading) return <div className="spinner" style={{ marginTop: 80 }} />;
+  if (error) return (
+    <div className="empty-state" style={{ marginTop: 40 }}>
+      <div className="empty-state__icon">⚠️</div>
+      <div className="empty-state__title">Failed to load</div>
+      <div className="empty-state__sub">{error}</div>
+    </div>
+  );
   if (!game) return null;
 
   const {
@@ -83,92 +86,86 @@ export default function GamePage() {
 
   const currentPrice = prices?.[0]?.price_current;
   const regularPrice = prices?.[0]?.price_regular;
+  const discountPct = prices?.[0]?.discount_pct;
 
-  const allTags = [
-    ...(genres || []),
-    ...(tags || []),
-    ...(categories || []),
-  ].filter(Boolean);
-
+  const allTags = [...(genres || []), ...(tags || []), ...(categories || [])].filter(Boolean);
   const uniqueTags = [...new Set(allTags)];
 
   return (
     <div className="page">
-      <Link
-        to="/"
-        style={{ fontSize: 13, color: 'var(--text-muted)', display: 'inline-block', marginBottom: 20 }}
-      >
-        ← Back to deals
-      </Link>
+      <Link to="/" className="back-link">← Back to deals</Link>
 
-      {/* ── Hero ──────────────────────────────────────────────── */}
+      {/* ── Hero ── */}
       <div className="game-hero">
-        <img
-          className="game-hero__img"
-          src={
-            header_image ||
-            `https://cdn.akamai.steamstatic.com/steam/apps/${steam_app_id}/header.jpg`
-          }
-          alt={title}
-          onError={(e) => {
-            e.currentTarget.style.opacity = '0';
-          }}
-        />
+        <div className="game-hero__art">
+          <img
+            className="game-hero__img"
+            src={header_image || `https://cdn.akamai.steamstatic.com/steam/apps/${steam_app_id}/header.jpg`}
+            alt={title}
+            onError={(e) => { e.currentTarget.style.opacity = '0'; }}
+          />
+        </div>
+
         <div className="game-hero__info">
           <h1 className="game-hero__title">
             {title}
             {libraryInfo && (
-              <span className="owned-badge" title="In your Steam library">
-                Owned
-              </span>
+              <span className="owned-badge" title="In your Steam library">Owned</span>
             )}
           </h1>
+
           {short_description && (
             <p className="game-hero__desc">{short_description}</p>
           )}
+
           {uniqueTags.length > 0 && (
             <div className="game-hero__tags">
-              {uniqueTags.map((t) => (
-                <span key={t} className="tag">
-                  {t}
-                </span>
+              {uniqueTags.slice(0, 12).map((t) => (
+                <span key={t} className="tag">{t}</span>
               ))}
             </div>
           )}
-          <div
-            style={{
-              fontSize: 13,
-              color: 'var(--text-muted)',
-              display: 'flex',
-              gap: 16,
-              flexWrap: 'wrap',
-            }}
-          >
-            {developers?.length > 0 && <span>Dev: {developers[0]}</span>}
-            {release_date && <span>Released: {fmtDate(release_date)}</span>}
-            {metacritic_score && <span>Metacritic: {metacritic_score}</span>}
+
+          <div className="game-hero__meta">
+            {developers?.length > 0 && (
+              <span>{developers[0]}</span>
+            )}
+            {release_date && <span>Released {fmtDate(release_date)}</span>}
+            {metacritic_score && <span>Metacritic {metacritic_score}</span>}
             {steam_review_desc && (
               <span>
-                Reviews: {steam_review_desc}
+                {steam_review_desc}
                 {steam_review_score ? ` (${steam_review_score}%)` : ''}
               </span>
             )}
             {libraryInfo && fmtHours(libraryInfo.playtimeMins) && (
-              <span style={{ color: 'var(--green)' }}>
+              <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
                 {fmtHours(libraryInfo.playtimeMins)}
               </span>
             )}
           </div>
+
+          {currentPrice != null && (
+            <div className="game-hero__price-row">
+              <span className="game-hero__sale-price">{fmt(currentPrice)}</span>
+              {regularPrice && Number(regularPrice) > Number(currentPrice) && (
+                <span className="game-hero__reg-price">{fmt(regularPrice)}</span>
+              )}
+              {discountPct > 0 && (
+                <span className="game-hero__discount-badge">-{discountPct}%</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Price stats ───────────────────────────────────────── */}
+      {/* ── Price overview ── */}
       <div className="game-section">
         <div className="game-section__title">Price Overview</div>
         <div className="stats-row">
           <div className="stat-box">
             <div className="stat-box__label">Current Price</div>
-            <div className="stat-box__value" style={{ color: 'var(--green)' }}>
+            <div className="stat-box__value" style={{ color: 'var(--accent)' }}>
               {fmt(currentPrice)}
             </div>
           </div>
@@ -178,13 +175,11 @@ export default function GamePage() {
           </div>
           <div className="stat-box">
             <div className="stat-box__label">All-Time Low</div>
-            <div className="stat-box__value" style={{ color: 'var(--green)' }}>
+            <div className="stat-box__value" style={{ color: 'var(--accent)' }}>
               {fmt(all_time_low)}
             </div>
             {all_time_low_date && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                {fmtDate(all_time_low_date)}
-              </div>
+              <div className="stat-box__sub">{fmtDate(all_time_low_date)}</div>
             )}
           </div>
           <div className="stat-box">
@@ -196,53 +191,36 @@ export default function GamePage() {
         </div>
       </div>
 
-      {/* ── Where to Buy (official stores) ────────────────────── */}
+      {/* ── Where to Buy ── */}
       {prices?.length > 0 && (
         <div className="game-section">
           <div className="game-section__title">Where to Buy</div>
-          <table className="price-table">
-            <thead>
-              <tr>
-                <th>Store</th>
-                <th>Sale Price</th>
-                <th>Regular</th>
-                <th>Discount</th>
-                <th>Updated</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {prices.map((p, i) => (
-                <tr key={i}>
-                  <td style={{ textTransform: 'capitalize' }}>{p.store}</td>
-                  <td className="price--sale">{fmt(p.price_current)}</td>
-                  <td
-                    style={{
-                      color: 'var(--text-muted)',
-                      textDecoration: 'line-through',
-                    }}
-                  >
-                    {fmt(p.price_regular)}
-                  </td>
-                  <td>{p.discount_pct ? `-${p.discount_pct}%` : '—'}</td>
-                  <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                    {fmtDate(p.recorded_at)}
-                  </td>
-                  <td>
-                    {p.deal_url && (
-                      <a href={p.deal_url} target="_blank" rel="noopener noreferrer">
-                        <button className="btn-deal">Get Deal</button>
-                      </a>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="price-cards">
+            {prices.map((p, i) => (
+              <div key={i} className="price-card">
+                <div className="price-card__store">{p.store}</div>
+                {p.discount_pct > 0 && (
+                  <span className="price-card__badge">-{p.discount_pct}%</span>
+                )}
+                <div className="price-card__prices">
+                  <span className="price-card__sale">{fmt(p.price_current)}</span>
+                  {p.price_regular && Number(p.price_regular) > Number(p.price_current) && (
+                    <span className="price-card__regular">{fmt(p.price_regular)}</span>
+                  )}
+                </div>
+                <span className="price-card__date">{fmtDate(p.recorded_at)}</span>
+                {p.deal_url && (
+                  <a href={p.deal_url} target="_blank" rel="noopener noreferrer">
+                    <button className="price-card__btn">Get Deal →</button>
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ── Key Reseller Prices ───────────────────────────────── */}
+      {/* ── Reseller Prices ── */}
       <ResellerPrices gameId={parseInt(gameId)} />
     </div>
   );

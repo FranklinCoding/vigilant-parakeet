@@ -1,9 +1,5 @@
 import { useState } from 'react';
 
-// Comprehensive genre/subgenre list matching Steam's depth.
-// Values that are official Steam genres (Action, Adventure, etc.) match
-// the genres[] column directly. Sub-genre values match via the tags[]
-// column once tags are populated by the sync job.
 const GENRE_GROUPS = [
   {
     label: 'Action & Combat',
