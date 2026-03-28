@@ -1,5 +1,15 @@
 const db = require('../db');
 
+const cdStoreTypeExpr = `COALESCE(to_jsonb(cd)->>'store_type', CASE WHEN cd.store IN ('steam', 'epic') THEN 'official' ELSE 'reseller' END)`;
+const cdPromoTypeExpr = `COALESCE(to_jsonb(cd)->>'promo_type', CASE WHEN cd.price_current = 0 THEN 'free' WHEN cd.is_on_sale = TRUE THEN 'sale' ELSE 'standard' END)`;
+const cdPromoLabelExpr = `COALESCE(to_jsonb(cd)->>'promo_label', CASE WHEN cd.price_current = 0 THEN 'Free right now' WHEN cd.is_on_sale = TRUE THEN INITCAP(cd.store) || ' sale' ELSE INITCAP(cd.store) || ' price' END)`;
+const cdPromoStartsExpr = `NULLIF(to_jsonb(cd)->>'promo_starts_at', '')::timestamptz`;
+const cdPromoEndsExpr = `NULLIF(to_jsonb(cd)->>'promo_ends_at', '')::timestamptz`;
+const cdSaleEndsExpr = `NULLIF(to_jsonb(cd)->>'sale_ends_at', '')::timestamptz`;
+const cdIsFreeExpr = `COALESCE(NULLIF(to_jsonb(cd)->>'is_free', '')::boolean, cd.price_current = 0)`;
+const cdHasDemoExpr = `COALESCE(NULLIF(to_jsonb(cd)->>'has_demo', '')::boolean, FALSE)`;
+const cdHasBundleExpr = `COALESCE(NULLIF(to_jsonb(cd)->>'has_bundle', '')::boolean, FALSE)`;
+
 function toIntArray(values = []) {
   return values
     .map((value) => parseInt(value, 10))
@@ -60,7 +70,7 @@ async function fetchCurrentDeals(filters = {}) {
   }
   if (filters.storeType) {
     params.push(filters.storeType);
-    conditions.push(`cd.store_type = $${params.length}`);
+    conditions.push(`${cdStoreTypeExpr} = $${params.length}`);
   }
   if (filters.store) {
     params.push(filters.store);
@@ -68,9 +78,10 @@ async function fetchCurrentDeals(filters = {}) {
   }
   if (filters.freeOnly) {
     conditions.push('(cd.promo_type = \'free\' OR cd.price_current = 0)');
+    conditions[conditions.length - 1] = `(${cdPromoTypeExpr} = 'free' OR cd.price_current = 0)`;
   }
   if (filters.endingSoon) {
-    conditions.push('(COALESCE(cd.sale_ends_at, cd.promo_ends_at) BETWEEN NOW() AND NOW() + INTERVAL \'72 hours\')');
+    conditions.push(`(COALESCE(${cdSaleEndsExpr}, ${cdPromoEndsExpr}) BETWEEN NOW() AND NOW() + INTERVAL '72 hours')`);
   }
   if (filters.excludeOwned?.length) {
     params.push(filters.excludeOwned);
@@ -92,16 +103,16 @@ async function fetchCurrentDeals(filters = {}) {
        cd.slug,
        cd.header_image,
        cd.store,
-       cd.store_type,
+       ${cdStoreTypeExpr} AS store_type,
        cd.price_current,
        cd.price_regular,
        cd.discount_pct,
        cd.is_on_sale,
-       cd.promo_type,
-       cd.promo_label,
-       cd.promo_starts_at,
-       cd.promo_ends_at,
-       cd.sale_ends_at,
+       ${cdPromoTypeExpr} AS promo_type,
+       ${cdPromoLabelExpr} AS promo_label,
+       ${cdPromoStartsExpr} AS promo_starts_at,
+       ${cdPromoEndsExpr} AS promo_ends_at,
+       ${cdSaleEndsExpr} AS sale_ends_at,
        cd.deal_url,
        cd.genres,
        cd.tags,
@@ -109,9 +120,9 @@ async function fetchCurrentDeals(filters = {}) {
        cd.steam_review_score,
        cd.steam_review_desc,
        cd.steam_app_id,
-       cd.is_free,
-       cd.has_demo,
-       cd.has_bundle,
+       ${cdIsFreeExpr} AS is_free,
+       ${cdHasDemoExpr} AS has_demo,
+       ${cdHasBundleExpr} AS has_bundle,
        cd.recorded_at,
        CASE
          WHEN cd.store = 'steam' THEN 92

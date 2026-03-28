@@ -4,6 +4,16 @@ const { classifyStore } = require('../lib/storeTypes');
 
 const router = Router();
 
+const storeTypeExpr = `COALESCE(to_jsonb(cd)->>'store_type', CASE WHEN cd.store IN ('steam', 'epic') THEN 'official' ELSE 'reseller' END)`;
+const promoTypeExpr = `COALESCE(to_jsonb(cd)->>'promo_type', CASE WHEN cd.price_current = 0 THEN 'free' WHEN cd.is_on_sale = TRUE THEN 'sale' ELSE 'standard' END)`;
+const promoLabelExpr = `COALESCE(to_jsonb(cd)->>'promo_label', CASE WHEN cd.price_current = 0 THEN 'Free right now' WHEN cd.is_on_sale = TRUE THEN INITCAP(cd.store) || ' sale' ELSE INITCAP(cd.store) || ' price' END)`;
+const promoStartsExpr = `NULLIF(to_jsonb(cd)->>'promo_starts_at', '')::timestamptz`;
+const promoEndsExpr = `NULLIF(to_jsonb(cd)->>'promo_ends_at', '')::timestamptz`;
+const saleEndsExpr = `NULLIF(to_jsonb(cd)->>'sale_ends_at', '')::timestamptz`;
+const isFreeExpr = `COALESCE(NULLIF(to_jsonb(cd)->>'is_free', '')::boolean, cd.price_current = 0)`;
+const hasDemoExpr = `COALESCE(NULLIF(to_jsonb(cd)->>'has_demo', '')::boolean, FALSE)`;
+const hasBundleExpr = `COALESCE(NULLIF(to_jsonb(cd)->>'has_bundle', '')::boolean, FALSE)`;
+
 // GET /api/deals
 // Query params: sort, genre, minDiscount, maxPrice, store, page, limit, q
 router.get('/', async (req, res, next) => {
@@ -46,14 +56,14 @@ router.get('/', async (req, res, next) => {
     }
     if (storeType) {
       filterParams.push(storeType);
-      conditions.push(`cd.store_type = $${filterParams.length}`);
+      conditions.push(`${storeTypeExpr} = $${filterParams.length}`);
     }
     if (promoType) {
       filterParams.push(promoType);
-      conditions.push(`cd.promo_type = $${filterParams.length}`);
+      conditions.push(`${promoTypeExpr} = $${filterParams.length}`);
     }
     if (String(freeOnly) === '1' || String(freeOnly).toLowerCase() === 'true') {
-      conditions.push(`(cd.promo_type = 'free' OR cd.price_current = 0)`);
+      conditions.push(`(${promoTypeExpr} = 'free' OR cd.price_current = 0)`);
     }
     if (q) {
       filterParams.push(`%${q}%`);
@@ -83,15 +93,15 @@ router.get('/', async (req, res, next) => {
            cd.slug,
            cd.header_image,
            cd.store,
-           cd.store_type,
+           ${storeTypeExpr} AS store_type,
            cd.price_current,
            cd.price_regular,
            cd.discount_pct,
-           cd.promo_type,
-           cd.promo_label,
-           cd.promo_starts_at,
-           cd.promo_ends_at,
-           cd.sale_ends_at,
+           ${promoTypeExpr} AS promo_type,
+           ${promoLabelExpr} AS promo_label,
+           ${promoStartsExpr} AS promo_starts_at,
+           ${promoEndsExpr} AS promo_ends_at,
+           ${saleEndsExpr} AS sale_ends_at,
            cd.deal_url,
            cd.genres,
            cd.tags,
@@ -99,9 +109,9 @@ router.get('/', async (req, res, next) => {
            cd.steam_review_score,
            cd.steam_review_desc,
            cd.steam_app_id,
-           cd.is_free,
-           cd.has_demo,
-           cd.has_bundle,
+           ${isFreeExpr} AS is_free,
+           ${hasDemoExpr} AS has_demo,
+           ${hasBundleExpr} AS has_bundle,
            cd.recorded_at
          FROM current_deals cd
          ${where}
@@ -139,19 +149,19 @@ router.get('/:gameId', async (req, res, next) => {
          json_agg(
             json_build_object(
              'store',         cd.store,
-             'store_type',    cd.store_type,
+             'store_type',    ${storeTypeExpr},
              'price_current', cd.price_current,
              'price_regular', cd.price_regular,
              'discount_pct',  cd.discount_pct,
-             'promo_type',    cd.promo_type,
-             'promo_label',   cd.promo_label,
-             'promo_starts_at', cd.promo_starts_at,
-             'promo_ends_at', cd.promo_ends_at,
-             'sale_ends_at',  cd.sale_ends_at,
+             'promo_type',    ${promoTypeExpr},
+             'promo_label',   ${promoLabelExpr},
+             'promo_starts_at', ${promoStartsExpr},
+             'promo_ends_at', ${promoEndsExpr},
+             'sale_ends_at',  ${saleEndsExpr},
              'deal_url',      cd.deal_url,
              'recorded_at',   cd.recorded_at
            ) ORDER BY
-             CASE WHEN COALESCE(cd.store_type, $2) = 'official' THEN 0 ELSE 1 END,
+             CASE WHEN ${storeTypeExpr} = 'official' THEN 0 ELSE 1 END,
              cd.price_current ASC
          ) FILTER (WHERE cd.game_id IS NOT NULL) AS prices,
          ps.all_time_low,
