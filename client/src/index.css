@@ -1388,30 +1388,89 @@ input, select { font-family: var(--font-body); }
 
 .library-card__body { color: var(--text-muted); line-height: 1.55; }
 
-.taste-panel__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.taste-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
   margin-top: 18px;
 }
 
-.taste-chip {
+.taste-card {
+  overflow: hidden;
+  border-radius: 22px;
   border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.22);
+}
+
+.taste-card--liked {
+  border-color: rgba(29,185,84,0.38);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.22), 0 0 0 1px rgba(29,185,84,0.18);
+}
+
+.taste-card--disliked {
+  border-color: rgba(255,80,80,0.28);
+}
+
+.taste-card__cover {
+  min-height: 92px;
+  padding: 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.taste-card__state {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.24);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.taste-card__body { padding: 16px; }
+.taste-card__title {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.taste-card__blurb {
+  color: var(--text-muted);
+  min-height: 60px;
+  line-height: 1.55;
+}
+
+.taste-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.taste-card__btn,
+.taste-card__reset {
   border-radius: 999px;
   padding: 10px 14px;
-  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
   color: var(--text);
-  cursor: pointer;
+  font: inherit;
 }
 
-.taste-chip--liked {
+.taste-card__btn--ghost { background: rgba(255,255,255,0.02); }
+.taste-card__btn--active {
+  border-color: rgba(29,185,84,0.42);
   background: rgba(29,185,84,0.16);
-  border-color: rgba(29,185,84,0.4);
 }
 
-.taste-chip--disliked {
-  background: rgba(255,80,80,0.12);
+.taste-card--disliked .taste-card__btn--active {
   border-color: rgba(255,80,80,0.32);
+  background: rgba(255,80,80,0.12);
 }
 
 .discovery-section { margin-bottom: 26px; }
@@ -1463,6 +1522,10 @@ input, select { font-family: var(--font-body); }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .taste-panel__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .discovery-hero,
   .library-hub {
     grid-template-columns: 1fr;
@@ -1474,6 +1537,10 @@ input, select { font-family: var(--font-body); }
 @media (max-width: 700px) {
   .discovery-rail,
   .discovery-hero__stack {
+    grid-template-columns: 1fr;
+  }
+
+  .taste-panel__grid {
     grid-template-columns: 1fr;
   }
 

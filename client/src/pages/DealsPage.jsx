@@ -105,50 +105,76 @@ function SectionRail({ section }) {
 }
 
 function QuickPicks({ value, onChange }) {
-  function cycleTag(tag) {
-    const liked = new Set(value.likedTags);
-    const disliked = new Set(value.dislikedTags);
-
-    if (liked.has(tag)) {
-      liked.delete(tag);
-      disliked.add(tag);
-    } else if (disliked.has(tag)) {
-      disliked.delete(tag);
-    } else {
-      liked.add(tag);
-    }
-
-    const next = {
-      likedTags: [...liked],
-      dislikedTags: [...disliked],
-    };
-    saveQuickPicks(next);
-    onChange(next);
-  }
-
   return (
     <section className="taste-panel">
       <div className="section-label">Quick Picks</div>
-      <h3>Teach the recommender your taste in under a minute</h3>
+      <h3>Shape your recommendations with a few fast calls</h3>
       <p>
-        Tap once for games you want more of, twice for styles you want less of.
-        Your library and playtime stay the main signal, this just helps the app find smarter surprises.
+        This works better when it feels like taste curation instead of filtering. Mark the lanes you want more of,
+        fade the ones you are tired of, and the discovery feed will rebalance around that signal.
       </p>
-      <div className="taste-panel__chips">
+      <div className="taste-panel__grid">
         {QUICK_PICK_TAGS.map((tag) => {
-          const state = value.likedTags.includes(tag)
+          const state = value.likedTags.includes(tag.id)
             ? 'liked'
-            : value.dislikedTags.includes(tag)
+            : value.dislikedTags.includes(tag.id)
               ? 'disliked'
               : 'neutral';
           return (
-            <button
-              key={tag}
-              className={`taste-chip taste-chip--${state}`}
-              onClick={() => cycleTag(tag)}
-            >
-              {state === 'liked' ? 'Like' : state === 'disliked' ? 'Pass' : 'Pick'} {tag}
-            </button>
+            <article key={tag.id} className={`taste-card taste-card--${state}`}>
+              <div className="taste-card__cover" style={{ background: tag.accent }}>
+                <span className="taste-card__state">
+                  {state === 'liked' ? 'More like this' : state === 'disliked' ? 'Less of this' : 'Neutral'}
+                </span>
+              </div>
+              <div className="taste-card__body">
+                <div className="taste-card__title">{tag.label}</div>
+                <p className="taste-card__blurb">{tag.blurb}</p>
+                <div className="taste-card__actions">
+                  <button
+                    className={`taste-card__btn${state === 'liked' ? ' taste-card__btn--active' : ''}`}
+                    onClick={() => {
+                      const next = {
+                        likedTags: [...new Set([...value.likedTags.filter((item) => item !== tag.id), tag.id])],
+                        dislikedTags: value.dislikedTags.filter((item) => item !== tag.id),
+                      };
+                      saveQuickPicks(next);
+                      onChange(next);
+                    }}
+                  >
+                    Turn up
+                  </button>
+                  <button
+                    className={`taste-card__btn taste-card__btn--ghost${state === 'disliked' ? ' taste-card__btn--active' : ''}`}
+                    onClick={() => {
+                      const next = {
+                        likedTags: value.likedTags.filter((item) => item !== tag.id),
+                        dislikedTags: [...new Set([...value.dislikedTags.filter((item) => item !== tag.id), tag.id])],
+                      };
+                      saveQuickPicks(next);
+                      onChange(next);
+                    }}
+                  >
+                    Cool off
+                  </button>
+                  {(state !== 'neutral') && (
+                    <button
+                      className="taste-card__reset"
+                      onClick={() => {
+                        const next = {
+                          likedTags: value.likedTags.filter((item) => item !== tag.id),
+                          dislikedTags: value.dislikedTags.filter((item) => item !== tag.id),
+                        };
+                        saveQuickPicks(next);
+                        onChange(next);
+                      }}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            </article>
           );
         })}
       </div>

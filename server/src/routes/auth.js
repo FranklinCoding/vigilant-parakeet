@@ -69,15 +69,42 @@ function tryParseJson(raw) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+function trimTrailingSlash(url) {
+  return String(url || '').replace(/\/+$/, '');
+}
+
+function getRequestOrigin(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0];
+  return `${forwardedProto}://${req.get('host')}`;
+}
+
+function getAppBaseUrl(req) {
+  if (config.nodeEnv === 'production') {
+    return trimTrailingSlash(getRequestOrigin(req));
+  }
+  return trimTrailingSlash(config.appBaseUrl || getRequestOrigin(req));
+}
+
+function getClientUrl(req) {
+  if (config.nodeEnv === 'production') {
+    if (config.clientUrl && !config.clientUrl.includes('localhost')) {
+      return trimTrailingSlash(config.clientUrl);
+    }
+    return trimTrailingSlash(getRequestOrigin(req));
+  }
+  return trimTrailingSlash(config.clientUrl || getRequestOrigin(req));
+}
+
 // ─── GET /api/auth/steam ──────────────────────────────────────────────────────
 // Redirects user to Steam's OpenID login page
 router.get('/steam', (req, res) => {
-  const returnUrl = `${config.appBaseUrl}/api/auth/steam/return`;
+  const appBaseUrl = getAppBaseUrl(req);
+  const returnUrl = `${appBaseUrl}/api/auth/steam/return`;
   const params = new URLSearchParams({
     'openid.ns':         'http://specs.openid.net/auth/2.0',
     'openid.mode':       'checkid_setup',
     'openid.return_to':  returnUrl,
-    'openid.realm':      config.appBaseUrl,
+    'openid.realm':      appBaseUrl,
     'openid.identity':   'http://specs.openid.net/auth/2.0/identifier_select',
     'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
   });
@@ -88,19 +115,21 @@ router.get('/steam', (req, res) => {
 // Steam redirects here after the user logs in
 router.get('/steam/return', async (req, res) => {
   try {
+    const clientUrl = getClientUrl(req);
+
     // ── 1. Verify the OpenID assertion with Steam ──────────────────────────
     const verifyParams = { ...req.query, 'openid.mode': 'check_authentication' };
     const { raw: verifyRaw } = await httpsPost(STEAM_OPENID_URL, verifyParams);
 
     if (!verifyRaw.includes('is_valid:true')) {
-      return res.redirect(`${config.clientUrl}/auth/callback?error=invalid_assertion`);
+      return res.redirect(`${clientUrl}/auth/callback?error=invalid_assertion`);
     }
 
     // ── 2. Extract Steam ID from claimed_id ────────────────────────────────
     const claimedId = req.query['openid.claimed_id'] || '';
     const steamIdMatch = claimedId.match(/\/openid\/id\/(\d{17})$/);
     if (!steamIdMatch) {
-      return res.redirect(`${config.clientUrl}/auth/callback?error=no_steam_id`);
+      return res.redirect(`${clientUrl}/auth/callback?error=no_steam_id`);
     }
     const steamId = steamIdMatch[1];
 
@@ -154,10 +183,10 @@ router.get('/steam/return', async (req, res) => {
     );
 
     // ── 6. Redirect frontend with token in URL hash ────────────────────────
-    res.redirect(`${config.clientUrl}/auth/callback#token=${token}`);
+    res.redirect(`${clientUrl}/auth/callback#token=${token}`);
   } catch (err) {
     console.error('[auth] Steam callback error:', err.message);
-    res.redirect(`${config.clientUrl}/auth/callback?error=server_error`);
+    res.redirect(`${getClientUrl(req)}/auth/callback?error=server_error`);
   }
 });
 
