@@ -126,7 +126,7 @@ databases:
   # PostgreSQL (Render Managed)
   # ─────────────────────────────────────────
   - name: vaultdeal-db
-    plan: free
+    plan: basic-256mb
     region: oregon
     databaseName: vaultdeal
     user: vaultdeal_user
