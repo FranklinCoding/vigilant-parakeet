@@ -38,6 +38,11 @@ services:
       - key: APP_BASE_URL
         sync: false
 
+      # Frontend URL — must be set explicitly so Steam auth redirects
+      # back to the deployed site instead of localhost.
+      - key: CLIENT_URL
+        sync: false
+
       # JWT secret for future user auth
       - key: JWT_SECRET
         generateValue: true

@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const db = require('../db');
+const { classifyStore } = require('../lib/storeTypes');
 
 const router = Router();
 
@@ -13,6 +14,9 @@ router.get('/', async (req, res, next) => {
       minDiscount,
       maxPrice,
       store,
+      storeType,
+      promoType,
+      freeOnly,
       page = 1,
       limit = 24,
       q,
@@ -39,6 +43,17 @@ router.get('/', async (req, res, next) => {
     if (store) {
       filterParams.push(store);
       conditions.push(`cd.store = $${filterParams.length}`);
+    }
+    if (storeType) {
+      filterParams.push(storeType);
+      conditions.push(`cd.store_type = $${filterParams.length}`);
+    }
+    if (promoType) {
+      filterParams.push(promoType);
+      conditions.push(`cd.promo_type = $${filterParams.length}`);
+    }
+    if (String(freeOnly) === '1' || String(freeOnly).toLowerCase() === 'true') {
+      conditions.push(`(cd.promo_type = 'free' OR cd.price_current = 0)`);
     }
     if (q) {
       filterParams.push(`%${q}%`);
@@ -68,15 +83,25 @@ router.get('/', async (req, res, next) => {
            cd.slug,
            cd.header_image,
            cd.store,
+           cd.store_type,
            cd.price_current,
            cd.price_regular,
            cd.discount_pct,
+           cd.promo_type,
+           cd.promo_label,
+           cd.promo_starts_at,
+           cd.promo_ends_at,
+           cd.sale_ends_at,
            cd.deal_url,
            cd.genres,
+           cd.tags,
            cd.metacritic_score,
            cd.steam_review_score,
            cd.steam_review_desc,
            cd.steam_app_id,
+           cd.is_free,
+           cd.has_demo,
+           cd.has_bundle,
            cd.recorded_at
          FROM current_deals cd
          ${where}
@@ -112,14 +137,22 @@ router.get('/:gameId', async (req, res, next) => {
       `SELECT
          g.*,
          json_agg(
-           json_build_object(
+            json_build_object(
              'store',         cd.store,
+             'store_type',    cd.store_type,
              'price_current', cd.price_current,
              'price_regular', cd.price_regular,
              'discount_pct',  cd.discount_pct,
+             'promo_type',    cd.promo_type,
+             'promo_label',   cd.promo_label,
+             'promo_starts_at', cd.promo_starts_at,
+             'promo_ends_at', cd.promo_ends_at,
+             'sale_ends_at',  cd.sale_ends_at,
              'deal_url',      cd.deal_url,
              'recorded_at',   cd.recorded_at
-           ) ORDER BY cd.price_current ASC
+           ) ORDER BY
+             CASE WHEN COALESCE(cd.store_type, $2) = 'official' THEN 0 ELSE 1 END,
+             cd.price_current ASC
          ) FILTER (WHERE cd.game_id IS NOT NULL) AS prices,
          ps.all_time_low,
          ps.all_time_low_date,
@@ -129,7 +162,7 @@ router.get('/:gameId', async (req, res, next) => {
        LEFT JOIN price_stats ps ON ps.game_id = g.id AND ps.store = 'steam'
        WHERE g.id = $1
        GROUP BY g.id, ps.all_time_low, ps.all_time_low_date, ps.avg_discount_pct`,
-      [parseInt(gameId)]
+      [parseInt(gameId), classifyStore('steam')]
     );
 
     if (!rows.length) return res.status(404).json({ error: 'Game not found' });

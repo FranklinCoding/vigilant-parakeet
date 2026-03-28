@@ -131,14 +131,16 @@ async function insertSnapshot(gameId, deal) {
 
   await db.query(
     `INSERT INTO price_snapshots
-       (game_id, store, price_current, price_regular, discount_pct, is_on_sale, deal_id, deal_url)
-     VALUES ($1, 'steam', $2, $3, $4, $5, $6, $7)`,
+       (game_id, store, store_type, price_current, price_regular, discount_pct, is_on_sale, promo_type, promo_label, deal_id, deal_url)
+     VALUES ($1, 'steam', 'official', $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       gameId,
       priceCurrent,
       priceRegular,
       discountPct,
       isOnSale,
+      isOnSale ? 'sale' : 'standard',
+      isOnSale ? 'Steam deal' : 'Steam price',
       deal.dealID,
       steamStoreUrl(steamAppId),  // Direct Steam link — no CheapShark redirect
     ]

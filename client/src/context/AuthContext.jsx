@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { getAuthMe } from '../api';
 
 const AuthContext = createContext(null);
 
@@ -32,6 +33,7 @@ function loadUser() {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => loadUser());
+  const [authChecked, setAuthChecked] = useState(false);
 
   const login = useCallback((token) => {
     localStorage.setItem(TOKEN_KEY, token);
@@ -52,8 +54,31 @@ export function AuthProvider({ children }) {
 
   const getToken = useCallback(() => localStorage.getItem(TOKEN_KEY), []);
 
+  useEffect(() => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      setAuthChecked(true);
+      return;
+    }
+
+    getAuthMe(token)
+      .then((result) => {
+        if (result?.user) {
+          setUser(result.user);
+        } else {
+          localStorage.removeItem(TOKEN_KEY);
+          setUser(null);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem(TOKEN_KEY);
+        setUser(null);
+      })
+      .finally(() => setAuthChecked(true));
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, getToken }}>
+    <AuthContext.Provider value={{ user, login, logout, getToken, authChecked }}>
       {children}
     </AuthContext.Provider>
   );

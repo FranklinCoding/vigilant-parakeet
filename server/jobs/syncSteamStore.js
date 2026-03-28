@@ -105,23 +105,26 @@ async function fetchSearchPage(categoryParams, page) {
 async function fetchFeaturedCategories() {
   try {
     const data = await fetchJson(`${STEAM_STORE_API}/featuredcategories?cc=US&l=en`);
-    const appIds = new Set();
+    const items = new Map();
 
     const sections = [
-      data?.top_sellers?.items,
-      data?.new_releases?.items,
-      data?.specials?.items,
-      data?.coming_soon?.items,
+      data?.top_sellers?.items || [],
+      data?.new_releases?.items || [],
+      data?.specials?.items || [],
+      data?.coming_soon?.items || [],
     ];
 
-    for (const items of sections) {
-      if (!Array.isArray(items)) continue;
-      for (const item of items) {
-        if (item.id) appIds.add(item.id);
+    for (const sectionItems of sections) {
+      for (const item of sectionItems) {
+        if (!item.id) continue;
+        items.set(item.id, {
+          appid: item.id,
+          discount_expiration: item.discount_expiration || null,
+        });
       }
     }
 
-    return [...appIds];
+    return [...items.values()];
   } catch {
     return [];
   }
@@ -147,6 +150,8 @@ async function upsertGame(steamAppId, meta) {
   const headerImage = meta.header_image
     ?? `https://cdn.akamai.steamstatic.com/steam/apps/${steamAppId}/header.jpg`;
   const isFree      = meta.is_free ?? false;
+  const hasDemo     = Array.isArray(meta.demos) ? meta.demos.length > 0 : false;
+  const hasBundle   = Array.isArray(meta.package_groups) ? meta.package_groups.some((group) => (group?.subs || []).length > 1) : false;
 
   const screenshots = (meta.screenshots ?? []).map((s) => ({
     path_thumbnail: forceHttps(s.path_thumbnail),
@@ -169,8 +174,8 @@ async function upsertGame(steamAppId, meta) {
     `INSERT INTO games (
        steam_app_id, title, slug, short_description, header_image,
        developers, publishers, release_date, metacritic_score,
-       genres, tags, is_free, screenshots, steam_movies, metadata_fetched_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+       genres, tags, is_free, screenshots, steam_movies, has_demo, has_bundle, metadata_fetched_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
      ON CONFLICT (steam_app_id) DO UPDATE SET
        title               = EXCLUDED.title,
        slug                = EXCLUDED.slug,
@@ -185,6 +190,8 @@ async function upsertGame(steamAppId, meta) {
        is_free             = EXCLUDED.is_free,
        screenshots         = EXCLUDED.screenshots,
        steam_movies        = EXCLUDED.steam_movies,
+       has_demo            = EXCLUDED.has_demo,
+       has_bundle          = EXCLUDED.has_bundle,
        metadata_fetched_at = NOW(),
        updated_at          = NOW()
      RETURNING id`,
@@ -192,7 +199,7 @@ async function upsertGame(steamAppId, meta) {
       steamAppId, title, slug, shortDesc, headerImage,
       developers, publishers, releaseDate, metacriticScore,
       genres, tags, isFree,
-      JSON.stringify(screenshots), JSON.stringify(steamMovies),
+      JSON.stringify(screenshots), JSON.stringify(steamMovies), hasDemo, hasBundle,
     ]
   );
 
@@ -201,7 +208,7 @@ async function upsertGame(steamAppId, meta) {
 
 // ─── insert price snapshot (only if price data exists) ───────────────────────
 
-async function insertSnapshot(gameId, steamAppId, meta) {
+async function insertSnapshot(gameId, steamAppId, meta, merchandising = {}) {
   const priceOverview = meta.price_overview;
   if (!priceOverview) return; // free game or no price data
 
@@ -209,12 +216,25 @@ async function insertSnapshot(gameId, steamAppId, meta) {
   const priceRegular = (priceOverview.initial ?? 0) / 100;
   const discountPct  = priceOverview.discount_percent ?? 0;
   const isOnSale     = discountPct > 0;
+  const saleEndsAt = merchandising.discount_expiration
+    ? new Date(merchandising.discount_expiration * 1000).toISOString()
+    : null;
 
   await db.query(
     `INSERT INTO price_snapshots
-       (game_id, store, price_current, price_regular, discount_pct, is_on_sale, deal_url)
-     VALUES ($1, 'steam', $2, $3, $4, $5, $6)`,
-    [gameId, priceCurrent, priceRegular, discountPct, isOnSale, steamStoreUrl(steamAppId)]
+       (game_id, store, store_type, price_current, price_regular, discount_pct, is_on_sale, promo_type, promo_label, sale_ends_at, deal_url)
+     VALUES ($1, 'steam', 'official', $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      gameId,
+      priceCurrent,
+      priceRegular,
+      discountPct,
+      isOnSale,
+      isOnSale ? 'sale' : 'standard',
+      isOnSale ? 'Steam sale' : 'Steam price',
+      saleEndsAt,
+      steamStoreUrl(steamAppId),
+    ]
   );
 }
 
@@ -244,7 +264,8 @@ async function updatePriceStats(gameId) {
 
 // ─── process a single app ID ─────────────────────────────────────────────────
 
-async function processApp(steamAppId, seen, stats) {
+async function processApp(item, seen, stats) {
+  const steamAppId = typeof item === 'number' ? item : item.appid;
   if (seen.has(steamAppId)) return;
   seen.add(steamAppId);
 
@@ -259,7 +280,7 @@ async function processApp(steamAppId, seen, stats) {
     if (!gameId) return;
 
     if (meta) {
-      await insertSnapshot(gameId, steamAppId, meta);
+      await insertSnapshot(gameId, steamAppId, meta, item || {});
       if (meta.price_overview) {
         await updatePriceStats(gameId);
       }
@@ -288,8 +309,8 @@ async function run() {
   console.log('[steam-sync] Fetching featured categories…');
   const featuredIds = await fetchFeaturedCategories();
   console.log(`[steam-sync] Featured: ${featuredIds.length} app IDs`);
-  for (const appId of featuredIds) {
-    await processApp(appId, seen, stats);
+  for (const item of featuredIds) {
+    await processApp(item, seen, stats);
   }
 
   // 2) Search results across multiple categories and pages
@@ -301,7 +322,7 @@ async function run() {
 
       console.log(`[steam-sync] ${label} page ${page}: ${items.length} items`);
       for (const item of items) {
-        await processApp(item.appid, seen, stats);
+        await processApp(item, seen, stats);
       }
 
       await sleep(500); // pause between pages

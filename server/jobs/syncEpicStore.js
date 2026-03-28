@@ -72,16 +72,15 @@ function postJson(url, body) {
   });
 }
 
-function getHeaderImage(keyImages) {
-  if (!Array.isArray(keyImages)) return null;
-  const wide = keyImages.find((k) => k.type === 'DieselStoreFrontWide');
-  const thumb = keyImages.find((k) => k.type === 'Thumbnail');
-  return (wide || thumb)?.url || null;
-}
-
 function epicDealUrl(productSlug) {
   if (!productSlug) return null;
   return `https://store.epicgames.com/en-US/p/${productSlug}`;
+}
+
+function getPromoWindow(el) {
+  const currentOffer = el.promotions?.promotionalOffers?.[0]?.promotionalOffers?.[0];
+  const upcomingOffer = el.promotions?.upcomingPromotionalOffers?.[0]?.promotionalOffers?.[0];
+  return currentOffer || upcomingOffer || null;
 }
 
 // ─── fetch free games ────────────────────────────────────────────────────────
@@ -209,14 +208,30 @@ async function upsertSnapshot(gameId, el) {
   const discount = price.discount ?? 0;
   const discountPct =
     priceRegular > 0 ? Math.round((discount / price.originalPrice) * 100) : 0;
-  const isOnSale = priceCurrent < priceRegular;
+  const promoWindow = getPromoWindow(el);
+  const isFreePromo = priceCurrent === 0 && priceRegular > 0;
+  const isOnSale = isFreePromo || priceCurrent < priceRegular;
   const dealUrl = epicDealUrl(el.productSlug);
+  const promoType = isFreePromo ? 'free' : isOnSale ? 'sale' : 'standard';
+  const promoLabel = isFreePromo ? 'Free on Epic' : isOnSale ? 'Epic sale' : 'Epic price';
 
   await db.query(
     `INSERT INTO price_snapshots
-       (game_id, store, price_current, price_regular, discount_pct, is_on_sale, deal_url)
-     VALUES ($1, 'epic', $2, $3, $4, $5, $6)`,
-    [gameId, priceCurrent, priceRegular, discountPct, isOnSale, dealUrl]
+       (game_id, store, store_type, price_current, price_regular, discount_pct, is_on_sale, promo_type, promo_label, promo_starts_at, promo_ends_at, sale_ends_at, deal_url)
+     VALUES ($1, 'epic', 'official', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [
+      gameId,
+      priceCurrent,
+      priceRegular,
+      discountPct,
+      isOnSale,
+      promoType,
+      promoLabel,
+      promoWindow?.startDate || null,
+      promoWindow?.endDate || null,
+      !isFreePromo ? promoWindow?.endDate || null : null,
+      dealUrl,
+    ]
   );
 }
 

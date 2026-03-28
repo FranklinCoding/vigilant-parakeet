@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS games (
   youtube_trailer_id  VARCHAR(16),                -- YouTube videoId, cached after first lookup
   steam_movies        JSONB DEFAULT '[]',         -- Normalized Steam mp4/webm clips
   epic_slug           VARCHAR(256),               -- Epic Games Store product slug (e.g. 'cyberpunk-2077')
+  has_demo            BOOLEAN DEFAULT FALSE,
+  has_bundle          BOOLEAN DEFAULT FALSE,
   metadata_fetched_at TIMESTAMPTZ,
   created_at          TIMESTAMPTZ DEFAULT NOW(),
   updated_at          TIMESTAMPTZ DEFAULT NOW()
@@ -47,6 +49,8 @@ CREATE TABLE IF NOT EXISTS games (
 -- ALTER TABLE games ADD COLUMN IF NOT EXISTS youtube_trailer_id VARCHAR(16);
 -- ALTER TABLE games ADD COLUMN IF NOT EXISTS steam_movies JSONB DEFAULT '[]';
 -- ALTER TABLE games ADD COLUMN IF NOT EXISTS epic_slug VARCHAR(256);
+-- ALTER TABLE games ADD COLUMN IF NOT EXISTS has_demo BOOLEAN DEFAULT FALSE;
+-- ALTER TABLE games ADD COLUMN IF NOT EXISTS has_bundle BOOLEAN DEFAULT FALSE;
 -- CREATE INDEX IF NOT EXISTS idx_games_epic_slug ON games(epic_slug);
 
 CREATE INDEX IF NOT EXISTS idx_games_steam_app_id ON games(steam_app_id);
@@ -65,10 +69,16 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
   game_id         INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
   store           VARCHAR(64) NOT NULL DEFAULT 'steam',
                   -- 'steam', 'g2a', 'kinguin', 'fanatical', 'gmg', 'humble'
+  store_type      VARCHAR(16) NOT NULL DEFAULT 'official',
   price_current   NUMERIC(10, 2) NOT NULL,
   price_regular   NUMERIC(10, 2),
   discount_pct    SMALLINT,                       -- 0–100
   is_on_sale      BOOLEAN DEFAULT FALSE,
+  promo_type      VARCHAR(32),
+  promo_label     VARCHAR(64),
+  promo_starts_at TIMESTAMPTZ,
+  promo_ends_at   TIMESTAMPTZ,
+  sale_ends_at    TIMESTAMPTZ,
   deal_id         VARCHAR(128),                   -- CheapShark dealID for deep link
   deal_url        TEXT,
   currency        VARCHAR(8) DEFAULT 'USD',
@@ -90,10 +100,16 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS current_deals AS
     ps.id,
     ps.game_id,
     ps.store,
+    ps.store_type,
     ps.price_current,
     ps.price_regular,
     ps.discount_pct,
     ps.is_on_sale,
+    ps.promo_type,
+    ps.promo_label,
+    ps.promo_starts_at,
+    ps.promo_ends_at,
+    ps.sale_ends_at,
     ps.deal_id,
     ps.deal_url,
     ps.recorded_at,
@@ -105,7 +121,10 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS current_deals AS
     g.metacritic_score,
     g.steam_review_score,
     g.steam_review_desc,
-    g.steam_app_id
+    g.steam_app_id,
+    g.is_free,
+    g.has_demo,
+    g.has_bundle
   FROM price_snapshots ps
   JOIN games g ON g.id = ps.game_id
   ORDER BY game_id, store, recorded_at DESC;

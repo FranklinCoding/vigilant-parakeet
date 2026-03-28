@@ -9,6 +9,9 @@ const gamesRouter = require('./routes/games');
 const steamRouter = require('./routes/steam');
 const resellersRouter = require('./routes/resellers');
 const authRouter = require('./routes/auth');
+const discoveryRouter = require('./routes/discovery');
+const recommendationsRouter = require('./routes/recommendations');
+const accountsRouter = require('./routes/accounts');
 
 const app = express();
 
@@ -21,6 +24,9 @@ app.use('/api/games', gamesRouter);
 app.use('/api/steam', steamRouter);
 app.use('/api/resellers', resellersRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/discovery', discoveryRouter);
+app.use('/api/recommendations', recommendationsRouter);
+app.use('/api/accounts', accountsRouter);
 
 // Serve React build in production
 if (config.nodeEnv === 'production') {
@@ -34,7 +40,7 @@ if (config.nodeEnv === 'production') {
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found' });
   });
-};
+}
 
 // Global error handler
 app.use((err, _req, res, _next) => {
