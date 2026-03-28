@@ -4,6 +4,7 @@ import { getDeal } from '../api';
 import ResellerPrices from '../components/ResellerPrices';
 import TrailerEmbed from '../components/TrailerEmbed';
 import MediaGallery from '../components/MediaGallery';
+import { classifyStore } from '../constants/storeTypes';
 
 const LS_KEY = 'vaultdeal_steam_profile';
 
@@ -32,6 +33,7 @@ export default function GamePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [libraryInfo, setLibraryInfo] = useState(null);
+  const [storeFilter, setStoreFilter] = useState({ official: true, resellers: true });
 
   useEffect(() => {
     setLoading(true);
@@ -206,33 +208,104 @@ export default function GamePage() {
       </div>
 
       {/* ── Where to Buy ── */}
-      {prices?.length > 0 && (
-        <div className="game-section">
-          <div className="game-section__title">Where to Buy</div>
-          <div className="price-cards">
-            {prices.map((p, i) => (
-              <div key={i} className="price-card">
-                <div className="price-card__store">{p.store}</div>
-                {p.discount_pct > 0 && (
-                  <span className="price-card__badge">-{p.discount_pct}%</span>
-                )}
-                <div className="price-card__prices">
-                  <span className="price-card__sale">{fmt(p.price_current)}</span>
-                  {p.price_regular && Number(p.price_regular) > Number(p.price_current) && (
-                    <span className="price-card__regular">{fmt(p.price_regular)}</span>
-                  )}
+      {prices?.length > 0 && (() => {
+        const officialPrices = prices.filter(p => classifyStore(p.store) === 'official');
+        const resellerPrices = prices.filter(p => classifyStore(p.store) === 'reseller');
+        return (
+          <div className="game-section">
+            <div className="game-section__title">Where to Buy</div>
+
+            <div className="wtb-filters">
+              <label className="wtb-filter-toggle">
+                <input
+                  type="checkbox"
+                  checked={storeFilter.official}
+                  onChange={e => setStoreFilter(f => ({ ...f, official: e.target.checked }))}
+                />
+                <span className="wtb-filter-toggle__label wtb-filter-toggle__label--official">
+                  🏪 Official Stores
+                </span>
+                <span className="wtb-filter-toggle__count">({officialPrices.length})</span>
+              </label>
+              <label className="wtb-filter-toggle">
+                <input
+                  type="checkbox"
+                  checked={storeFilter.resellers}
+                  onChange={e => setStoreFilter(f => ({ ...f, resellers: e.target.checked }))}
+                />
+                <span className="wtb-filter-toggle__label wtb-filter-toggle__label--reseller">
+                  🔑 Key Resellers
+                </span>
+                <span className="wtb-filter-toggle__count">({resellerPrices.length})</span>
+              </label>
+            </div>
+
+            {storeFilter.official && officialPrices.length > 0 && (
+              <>
+                <div className="wtb-section-label">Official Stores</div>
+                <div className="price-cards">
+                  {officialPrices.map((p, i) => (
+                    <div key={i} className="price-card price-card--official">
+                      <div className="price-card__store">{p.store}</div>
+                      {p.discount_pct > 0 && (
+                        <span className="price-card__badge">-{p.discount_pct}%</span>
+                      )}
+                      <div className="price-card__prices">
+                        <span className="price-card__sale">{fmt(p.price_current)}</span>
+                        {p.price_regular && Number(p.price_regular) > Number(p.price_current) && (
+                          <span className="price-card__regular">{fmt(p.price_regular)}</span>
+                        )}
+                      </div>
+                      <span className="price-card__date">{fmtDate(p.recorded_at)}</span>
+                      {p.deal_url && (
+                        <a href={p.deal_url} target="_blank" rel="noopener noreferrer">
+                          <button className="price-card__btn">Get Deal →</button>
+                        </a>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <span className="price-card__date">{fmtDate(p.recorded_at)}</span>
-                {p.deal_url && (
-                  <a href={p.deal_url} target="_blank" rel="noopener noreferrer">
-                    <button className="price-card__btn">Get Deal →</button>
-                  </a>
-                )}
-              </div>
-            ))}
+              </>
+            )}
+
+            {storeFilter.resellers && resellerPrices.length > 0 && (
+              <>
+                <div className="wtb-section-label wtb-section-label--reseller">Key Resellers</div>
+                <div className="reseller-warning">
+                  <span className="reseller-warning__icon">⚠️</span>
+                  <span className="reseller-warning__text">
+                    These are <strong>third-party key sellers</strong>, not official stores.
+                    Keys may be region-locked, revoked, or obtained through unauthorized means.
+                    Buy at your own risk.
+                  </span>
+                </div>
+                <div className="price-cards">
+                  {resellerPrices.map((p, i) => (
+                    <div key={i} className="price-card price-card--reseller">
+                      <div className="price-card__store">{p.store}</div>
+                      {p.discount_pct > 0 && (
+                        <span className="price-card__badge">-{p.discount_pct}%</span>
+                      )}
+                      <div className="price-card__prices">
+                        <span className="price-card__sale">{fmt(p.price_current)}</span>
+                        {p.price_regular && Number(p.price_regular) > Number(p.price_current) && (
+                          <span className="price-card__regular">{fmt(p.price_regular)}</span>
+                        )}
+                      </div>
+                      <span className="price-card__date">{fmtDate(p.recorded_at)}</span>
+                      {p.deal_url && (
+                        <a href={p.deal_url} target="_blank" rel="noopener noreferrer">
+                          <button className="price-card__btn">Get Deal →</button>
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Reseller Prices ── */}
       <ResellerPrices gameId={parseInt(gameId)} />

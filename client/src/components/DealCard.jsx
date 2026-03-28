@@ -65,7 +65,11 @@ export default function DealCard({ deal, style }) {
               ${Number(price_regular).toFixed(2)}
             </span>
           )}
-          <span className="deal-card__store">{store}</span>
+          <span className="deal-card__store">
+            {store === 'epic' ? (
+              <span className="store-badge--epic">EPIC</span>
+            ) : store}
+          </span>
         </div>
       </div>
     </Link>

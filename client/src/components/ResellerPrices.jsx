@@ -82,7 +82,7 @@ function ResellerPricesInner({ gameId }) {
     <div className="game-section reseller-section">
       <div className="reseller-section__header">
         <div className="game-section__title" style={{ marginBottom: 0 }}>
-          Prices Across Stores
+          Compare More Stores
         </div>
         <label className="reseller-toggle">
           <input

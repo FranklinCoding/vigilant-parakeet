@@ -100,6 +100,27 @@ services:
       - key: STEAM_API_KEY
         sync: false
 
+  # ─────────────────────────────────────────
+  # Epic Games Store Sync (Cron Job)
+  # Runs every 6 hours — pulls free + on-sale
+  # games from Epic (no API key required)
+  # ─────────────────────────────────────────
+  - type: cron
+    name: vaultdeal-epic-sync
+    runtime: node
+    region: oregon
+    rootDir: .
+    buildCommand: cd server && npm install
+    startCommand: node server/jobs/syncEpicStore.js
+    schedule: "0 */6 * * *"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vaultdeal-db
+          property: connectionString
+
 databases:
   # ─────────────────────────────────────────
   # PostgreSQL (Render Managed)

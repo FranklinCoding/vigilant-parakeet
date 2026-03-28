@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS games (
   website             TEXT,
   youtube_trailer_id  VARCHAR(16),                -- YouTube videoId, cached after first lookup
   steam_movies        JSONB DEFAULT '[]',         -- Normalized Steam mp4/webm clips
+  epic_slug           VARCHAR(256),               -- Epic Games Store product slug (e.g. 'cyberpunk-2077')
   metadata_fetched_at TIMESTAMPTZ,
   created_at          TIMESTAMPTZ DEFAULT NOW(),
   updated_at          TIMESTAMPTZ DEFAULT NOW()
@@ -45,12 +46,15 @@ CREATE TABLE IF NOT EXISTS games (
 -- Migrations for existing deployments:
 -- ALTER TABLE games ADD COLUMN IF NOT EXISTS youtube_trailer_id VARCHAR(16);
 -- ALTER TABLE games ADD COLUMN IF NOT EXISTS steam_movies JSONB DEFAULT '[]';
+-- ALTER TABLE games ADD COLUMN IF NOT EXISTS epic_slug VARCHAR(256);
+-- CREATE INDEX IF NOT EXISTS idx_games_epic_slug ON games(epic_slug);
 
 CREATE INDEX IF NOT EXISTS idx_games_steam_app_id ON games(steam_app_id);
 CREATE INDEX IF NOT EXISTS idx_games_slug ON games(slug);
 CREATE INDEX IF NOT EXISTS idx_games_genres ON games USING GIN(genres);
 CREATE INDEX IF NOT EXISTS idx_games_tags ON games USING GIN(tags);
 CREATE INDEX IF NOT EXISTS idx_games_metacritic ON games(metacritic_score);
+CREATE INDEX IF NOT EXISTS idx_games_epic_slug ON games(epic_slug);
 
 -- ============================================================
 -- PRICE SNAPSHOTS
