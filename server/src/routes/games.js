@@ -5,6 +5,13 @@ const config = require('../config');
 
 const router = Router();
 
+const psStoreTypeExpr = `COALESCE(to_jsonb(ps)->>'store_type', CASE WHEN ps.store IN ('steam', 'epic') THEN 'official' ELSE 'reseller' END)`;
+const psPromoTypeExpr = `COALESCE(to_jsonb(ps)->>'promo_type', CASE WHEN ps.price_current = 0 THEN 'free' WHEN ps.is_on_sale = TRUE THEN 'sale' ELSE 'standard' END)`;
+const psPromoLabelExpr = `COALESCE(to_jsonb(ps)->>'promo_label', CASE WHEN ps.price_current = 0 THEN 'Free right now' WHEN ps.is_on_sale = TRUE THEN INITCAP(ps.store) || ' sale' ELSE INITCAP(ps.store) || ' price' END)`;
+const psPromoStartsExpr = `NULLIF(to_jsonb(ps)->>'promo_starts_at', '')::timestamptz`;
+const psPromoEndsExpr = `NULLIF(to_jsonb(ps)->>'promo_ends_at', '')::timestamptz`;
+const psSaleEndsExpr = `NULLIF(to_jsonb(ps)->>'sale_ends_at', '')::timestamptz`;
+
 // GET /api/games/:gameId/trailer
 // Returns cached YouTube videoId for a game, searching YouTube on first hit.
 // Critical: YouTube search costs 100 quota units/call (only 100 free/day).
@@ -82,15 +89,15 @@ router.get('/:steamAppId', async (req, res, next) => {
                'price_current', ps.price_current,
                'price_regular', ps.price_regular,
                'discount_pct',  ps.discount_pct,
-             'is_on_sale',    ps.is_on_sale,
-             'store_type',    ps.store_type,
-             'promo_type',    ps.promo_type,
-             'promo_label',   ps.promo_label,
-             'promo_starts_at', ps.promo_starts_at,
-             'promo_ends_at', ps.promo_ends_at,
-             'sale_ends_at',  ps.sale_ends_at,
-             'deal_url',      ps.deal_url,
-             'recorded_at',   ps.recorded_at
+               'is_on_sale',    ps.is_on_sale,
+               'store_type',    ${psStoreTypeExpr},
+               'promo_type',    ${psPromoTypeExpr},
+               'promo_label',   ${psPromoLabelExpr},
+               'promo_starts_at', ${psPromoStartsExpr},
+               'promo_ends_at', ${psPromoEndsExpr},
+               'sale_ends_at',  ${psSaleEndsExpr},
+               'deal_url',      ps.deal_url,
+               'recorded_at',   ps.recorded_at
              ) ORDER BY ps.recorded_at DESC
            ) FILTER (WHERE ps.id IS NOT NULL),
            '[]'
