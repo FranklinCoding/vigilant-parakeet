@@ -82,9 +82,15 @@ router.get('/:steamAppId', async (req, res, next) => {
                'price_current', ps.price_current,
                'price_regular', ps.price_regular,
                'discount_pct',  ps.discount_pct,
-               'is_on_sale',    ps.is_on_sale,
-               'deal_url',      ps.deal_url,
-               'recorded_at',   ps.recorded_at
+             'is_on_sale',    ps.is_on_sale,
+             'store_type',    ps.store_type,
+             'promo_type',    ps.promo_type,
+             'promo_label',   ps.promo_label,
+             'promo_starts_at', ps.promo_starts_at,
+             'promo_ends_at', ps.promo_ends_at,
+             'sale_ends_at',  ps.sale_ends_at,
+             'deal_url',      ps.deal_url,
+             'recorded_at',   ps.recorded_at
              ) ORDER BY ps.recorded_at DESC
            ) FILTER (WHERE ps.id IS NOT NULL),
            '[]'

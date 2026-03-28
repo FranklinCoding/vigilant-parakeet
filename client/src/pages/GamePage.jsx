@@ -5,15 +5,16 @@ import ResellerPrices from '../components/ResellerPrices';
 import TrailerEmbed from '../components/TrailerEmbed';
 import MediaGallery from '../components/MediaGallery';
 import { classifyStore } from '../constants/storeTypes';
+import { formatCountdown } from '../lib/discovery';
 
 const LS_KEY = 'vaultdeal_steam_profile';
 
 function fmt(val) {
-  return val != null ? `$${Number(val).toFixed(2)}` : '—';
+  return val != null ? `$${Number(val).toFixed(2)}` : '--';
 }
 
 function fmtDate(iso) {
-  if (!iso) return '—';
+  if (!iso) return '--';
   return new Date(iso).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
@@ -54,19 +55,23 @@ export default function GamePage() {
       const libStored = localStorage.getItem(libKey);
       if (!libStored) return;
       const lib = JSON.parse(libStored);
-      const entry = lib?.games?.find((g) => g.appId === game.steam_app_id);
+      const entry = lib?.games?.find((item) => item.appId === game.steam_app_id);
       if (entry) setLibraryInfo(entry);
-    } catch {}
+    } catch {
+      setLibraryInfo(null);
+    }
   }, [game?.steam_app_id]);
 
   if (loading) return <div className="spinner" style={{ marginTop: 80 }} />;
-  if (error) return (
-    <div className="empty-state" style={{ marginTop: 40 }}>
-      <div className="empty-state__icon">⚠️</div>
-      <div className="empty-state__title">Failed to load</div>
-      <div className="empty-state__sub">{error}</div>
-    </div>
-  );
+  if (error) {
+    return (
+      <div className="empty-state" style={{ marginTop: 40 }}>
+        <div className="empty-state__icon">!</div>
+        <div className="empty-state__title">Failed to load</div>
+        <div className="empty-state__sub">{error}</div>
+      </div>
+    );
+  }
   if (!game) return null;
 
   const {
@@ -88,20 +93,22 @@ export default function GamePage() {
     steam_app_id,
     screenshots,
     steam_movies,
+    has_demo,
+    has_bundle,
   } = game;
 
-  const currentPrice = prices?.[0]?.price_current;
-  const regularPrice = prices?.[0]?.price_regular;
-  const discountPct = prices?.[0]?.discount_pct;
-
+  const primaryPrice = prices?.find((price) => price.store_type === 'official') || prices?.[0];
+  const currentPrice = primaryPrice?.price_current;
+  const regularPrice = primaryPrice?.price_regular;
+  const discountPct = primaryPrice?.discount_pct;
+  const heroCountdown = formatCountdown(primaryPrice?.sale_ends_at || primaryPrice?.promo_ends_at);
   const allTags = [...(genres || []), ...(tags || []), ...(categories || [])].filter(Boolean);
   const uniqueTags = [...new Set(allTags)];
 
   return (
     <div className="page">
-      <Link to="/" className="back-link">← Back to deals</Link>
+      <Link to="/" className="back-link">Back to deals</Link>
 
-      {/* ── Hero ── */}
       <div className="game-hero">
         <div className="game-hero__art">
           <img
@@ -115,27 +122,21 @@ export default function GamePage() {
         <div className="game-hero__info">
           <h1 className="game-hero__title">
             {title}
-            {libraryInfo && (
-              <span className="owned-badge" title="In your Steam library">Owned</span>
-            )}
+            {libraryInfo && <span className="owned-badge" title="In your Steam library">Owned</span>}
           </h1>
 
-          {short_description && (
-            <p className="game-hero__desc">{short_description}</p>
-          )}
+          {short_description && <p className="game-hero__desc">{short_description}</p>}
 
           {uniqueTags.length > 0 && (
             <div className="game-hero__tags">
-              {uniqueTags.slice(0, 12).map((t) => (
-                <span key={t} className="tag">{t}</span>
+              {uniqueTags.slice(0, 12).map((tag) => (
+                <span key={tag} className="tag">{tag}</span>
               ))}
             </div>
           )}
 
           <div className="game-hero__meta">
-            {developers?.length > 0 && (
-              <span>{developers[0]}</span>
-            )}
+            {developers?.length > 0 && <span>{developers[0]}</span>}
             {release_date && <span>Released {fmtDate(release_date)}</span>}
             {metacritic_score && <span>Metacritic {metacritic_score}</span>}
             {steam_review_desc && (
@@ -149,6 +150,8 @@ export default function GamePage() {
                 {fmtHours(libraryInfo.playtimeMins)}
               </span>
             )}
+            {has_demo && <span>Demo available</span>}
+            {has_bundle && <span>Bundle available</span>}
           </div>
 
           {currentPrice != null && (
@@ -162,28 +165,22 @@ export default function GamePage() {
               )}
             </div>
           )}
+          {heroCountdown && <div className="game-hero__countdown">{heroCountdown}</div>}
         </div>
       </div>
 
-      {/* ── Trailer ── */}
-      {steam_app_id && (
-        <TrailerEmbed gameId={parseInt(gameId)} gameTitle={title} />
-      )}
+      {steam_app_id && <TrailerEmbed gameId={parseInt(gameId, 10)} gameTitle={title} />}
 
-      {/* ── Media Gallery ── */}
       {((screenshots?.length > 0) || (steam_movies?.length > 0)) && (
         <MediaGallery screenshots={screenshots ?? []} movies={steam_movies ?? []} />
       )}
 
-      {/* ── Price overview ── */}
       <div className="game-section">
         <div className="game-section__title">Price Overview</div>
         <div className="stats-row">
           <div className="stat-box">
             <div className="stat-box__label">Current Price</div>
-            <div className="stat-box__value" style={{ color: 'var(--accent)' }}>
-              {fmt(currentPrice)}
-            </div>
+            <div className="stat-box__value" style={{ color: 'var(--accent)' }}>{fmt(currentPrice)}</div>
           </div>
           <div className="stat-box">
             <div className="stat-box__label">Regular Price</div>
@@ -191,26 +188,48 @@ export default function GamePage() {
           </div>
           <div className="stat-box">
             <div className="stat-box__label">All-Time Low</div>
-            <div className="stat-box__value" style={{ color: 'var(--accent)' }}>
-              {fmt(all_time_low)}
-            </div>
-            {all_time_low_date && (
-              <div className="stat-box__sub">{fmtDate(all_time_low_date)}</div>
-            )}
+            <div className="stat-box__value" style={{ color: 'var(--accent)' }}>{fmt(all_time_low)}</div>
+            {all_time_low_date && <div className="stat-box__sub">{fmtDate(all_time_low_date)}</div>}
           </div>
           <div className="stat-box">
             <div className="stat-box__label">Avg Discount</div>
-            <div className="stat-box__value">
-              {avg_discount_pct != null ? `${avg_discount_pct}%` : '—'}
-            </div>
+            <div className="stat-box__value">{avg_discount_pct != null ? `${avg_discount_pct}%` : '--'}</div>
           </div>
         </div>
       </div>
 
-      {/* ── Where to Buy ── */}
       {prices?.length > 0 && (() => {
-        const officialPrices = prices.filter(p => classifyStore(p.store) === 'official');
-        const resellerPrices = prices.filter(p => classifyStore(p.store) === 'reseller');
+        const officialPrices = prices.filter((price) => classifyStore(price.store) === 'official');
+        const resellerPrices = prices.filter((price) => classifyStore(price.store) === 'reseller');
+
+        function renderPriceCard(price, variant) {
+          const countdown = formatCountdown(price.sale_ends_at || price.promo_ends_at);
+          return (
+            <div key={`${price.store}-${price.recorded_at}`} className={`price-card price-card--${variant}`}>
+              <div className="price-card__store">{price.store}</div>
+              {price.discount_pct > 0 && <span className="price-card__badge">-{price.discount_pct}%</span>}
+              <div className="price-card__prices">
+                <span className="price-card__sale">{fmt(price.price_current)}</span>
+                {price.price_regular && Number(price.price_regular) > Number(price.price_current) && (
+                  <span className="price-card__regular">{fmt(price.price_regular)}</span>
+                )}
+              </div>
+              {(price.promo_label || countdown) && (
+                <div className="price-card__promo-line">
+                  <span>{price.promo_type === 'free' ? 'Free now' : price.promo_label}</span>
+                  {countdown && <span>{countdown}</span>}
+                </div>
+              )}
+              <span className="price-card__date">{fmtDate(price.recorded_at)}</span>
+              {price.deal_url && (
+                <a href={price.deal_url} target="_blank" rel="noopener noreferrer">
+                  <button className="price-card__btn">Get Deal</button>
+                </a>
+              )}
+            </div>
+          );
+        }
+
         return (
           <div className="game-section">
             <div className="game-section__title">Where to Buy</div>
@@ -220,22 +239,18 @@ export default function GamePage() {
                 <input
                   type="checkbox"
                   checked={storeFilter.official}
-                  onChange={e => setStoreFilter(f => ({ ...f, official: e.target.checked }))}
+                  onChange={(e) => setStoreFilter((value) => ({ ...value, official: e.target.checked }))}
                 />
-                <span className="wtb-filter-toggle__label wtb-filter-toggle__label--official">
-                  🏪 Official Stores
-                </span>
+                <span className="wtb-filter-toggle__label wtb-filter-toggle__label--official">Official Stores</span>
                 <span className="wtb-filter-toggle__count">({officialPrices.length})</span>
               </label>
               <label className="wtb-filter-toggle">
                 <input
                   type="checkbox"
                   checked={storeFilter.resellers}
-                  onChange={e => setStoreFilter(f => ({ ...f, resellers: e.target.checked }))}
+                  onChange={(e) => setStoreFilter((value) => ({ ...value, resellers: e.target.checked }))}
                 />
-                <span className="wtb-filter-toggle__label wtb-filter-toggle__label--reseller">
-                  🔑 Key Resellers
-                </span>
+                <span className="wtb-filter-toggle__label wtb-filter-toggle__label--reseller">Key Resellers</span>
                 <span className="wtb-filter-toggle__count">({resellerPrices.length})</span>
               </label>
             </div>
@@ -244,26 +259,7 @@ export default function GamePage() {
               <>
                 <div className="wtb-section-label">Official Stores</div>
                 <div className="price-cards">
-                  {officialPrices.map((p, i) => (
-                    <div key={i} className="price-card price-card--official">
-                      <div className="price-card__store">{p.store}</div>
-                      {p.discount_pct > 0 && (
-                        <span className="price-card__badge">-{p.discount_pct}%</span>
-                      )}
-                      <div className="price-card__prices">
-                        <span className="price-card__sale">{fmt(p.price_current)}</span>
-                        {p.price_regular && Number(p.price_regular) > Number(p.price_current) && (
-                          <span className="price-card__regular">{fmt(p.price_regular)}</span>
-                        )}
-                      </div>
-                      <span className="price-card__date">{fmtDate(p.recorded_at)}</span>
-                      {p.deal_url && (
-                        <a href={p.deal_url} target="_blank" rel="noopener noreferrer">
-                          <button className="price-card__btn">Get Deal →</button>
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                  {officialPrices.map((price) => renderPriceCard(price, 'official'))}
                 </div>
               </>
             )}
@@ -272,7 +268,7 @@ export default function GamePage() {
               <>
                 <div className="wtb-section-label wtb-section-label--reseller">Key Resellers</div>
                 <div className="reseller-warning">
-                  <span className="reseller-warning__icon">⚠️</span>
+                  <span className="reseller-warning__icon">!</span>
                   <span className="reseller-warning__text">
                     These are <strong>third-party key sellers</strong>, not official stores.
                     Keys may be region-locked, revoked, or obtained through unauthorized means.
@@ -280,26 +276,7 @@ export default function GamePage() {
                   </span>
                 </div>
                 <div className="price-cards">
-                  {resellerPrices.map((p, i) => (
-                    <div key={i} className="price-card price-card--reseller">
-                      <div className="price-card__store">{p.store}</div>
-                      {p.discount_pct > 0 && (
-                        <span className="price-card__badge">-{p.discount_pct}%</span>
-                      )}
-                      <div className="price-card__prices">
-                        <span className="price-card__sale">{fmt(p.price_current)}</span>
-                        {p.price_regular && Number(p.price_regular) > Number(p.price_current) && (
-                          <span className="price-card__regular">{fmt(p.price_regular)}</span>
-                        )}
-                      </div>
-                      <span className="price-card__date">{fmtDate(p.recorded_at)}</span>
-                      {p.deal_url && (
-                        <a href={p.deal_url} target="_blank" rel="noopener noreferrer">
-                          <button className="price-card__btn">Get Deal →</button>
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                  {resellerPrices.map((price) => renderPriceCard(price, 'reseller'))}
                 </div>
               </>
             )}
@@ -307,8 +284,7 @@ export default function GamePage() {
         );
       })()}
 
-      {/* ── Reseller Prices ── */}
-      <ResellerPrices gameId={parseInt(gameId)} />
+      <ResellerPrices gameId={parseInt(gameId, 10)} />
     </div>
   );
 }

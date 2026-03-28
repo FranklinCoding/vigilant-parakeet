@@ -22,14 +22,14 @@ export default function AuthCallbackPage() {
       navigate('/steam', { replace: true });
     } else {
       console.error('[auth] Callback error:', error || 'no token');
-      navigate('/?auth_error=' + (error || 'unknown'), { replace: true });
+      navigate('/?auth_error=' + encodeURIComponent(error || 'unknown'), { replace: true });
     }
   }, [login, navigate]);
 
   return (
     <div className="page">
       <div className="spinner" style={{ marginTop: 80 }} />
-      <p className="state-msg">Signing you in…</p>
+      <p className="state-msg">Signing you in...</p>
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useWatchlist } from '../context/WatchlistContext';
 import { useToast } from '../context/ToastContext';
+import { formatCountdown } from '../lib/discovery';
 
-export default function DealCard({ deal, style }) {
+export default function DealCard({ deal, style, compact = false }) {
   const {
     game_id,
     title,
@@ -12,6 +13,11 @@ export default function DealCard({ deal, style }) {
     price_regular,
     discount_pct,
     steam_review_desc,
+    promo_type,
+    promo_label,
+    promo_ends_at,
+    sale_ends_at,
+    reason,
   } = deal;
 
   const { toggle, isWatched } = useWatchlist();
@@ -29,7 +35,7 @@ export default function DealCard({ deal, style }) {
   }
 
   return (
-    <Link to={`/game/${game_id}`} className="deal-card" style={style}>
+    <Link to={`/game/${game_id}`} className={`deal-card${compact ? ' deal-card--compact' : ''}`} style={style}>
       <div className="deal-card__art">
         <img
           className="deal-card__img"
@@ -52,9 +58,17 @@ export default function DealCard({ deal, style }) {
         </button>
       </div>
       <div className="deal-card__body">
+        {(promo_label || promo_type === 'free') && (
+          <div className="deal-card__eyebrow">
+            {promo_type === 'free' ? 'Free now' : promo_label}
+          </div>
+        )}
         <div className="deal-card__title">{title}</div>
         {steam_review_desc && (
           <div className="deal-card__review">{steam_review_desc}</div>
+        )}
+        {reason && (
+          <div className="deal-card__reason">{reason}</div>
         )}
         <div className="deal-card__meta">
           <span className="deal-card__price">
@@ -71,6 +85,9 @@ export default function DealCard({ deal, style }) {
             ) : store}
           </span>
         </div>
+        {formatCountdown(sale_ends_at || promo_ends_at) && (
+          <div className="deal-card__countdown">{formatCountdown(sale_ends_at || promo_ends_at)}</div>
+        )}
       </div>
     </Link>
   );

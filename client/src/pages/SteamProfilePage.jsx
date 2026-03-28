@@ -142,6 +142,8 @@ export default function SteamProfilePage() {
       ]);
       setLibrary(lib);
       setRecent(rec);
+      localStorage.setItem(`vaultdeal_library_${steamId}`, JSON.stringify(lib));
+      localStorage.setItem(`vaultdeal_recent_${steamId}`, JSON.stringify(rec));
 
       if (!lib.limited && lib.games?.length) {
         getDeals({ sort: 'rating', limit: 6, minDiscount: 25 })
