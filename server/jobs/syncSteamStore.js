@@ -65,6 +65,11 @@ function steamStoreUrl(steamAppId) {
   return `https://store.steampowered.com/app/${steamAppId}/`;
 }
 
+function forceHttps(url) {
+  if (!url) return url;
+  return url.replace(/^http:\/\//i, 'https://');
+}
+
 // ─── Steam appdetails fetch ───────────────────────────────────────────────────
 
 async function fetchAppDetails(steamAppId) {
@@ -143,12 +148,29 @@ async function upsertGame(steamAppId, meta) {
     ?? `https://cdn.akamai.steamstatic.com/steam/apps/${steamAppId}/header.jpg`;
   const isFree      = meta.is_free ?? false;
 
+  const screenshots = (meta.screenshots ?? []).map((s) => ({
+    path_thumbnail: forceHttps(s.path_thumbnail),
+    path_full:      forceHttps(s.path_full),
+  }));
+
+  // Sort highlight movies first, then normalize shape and force https on all URLs
+  const steamMovies = (meta.movies ?? [])
+    .sort((a, b) => (b.highlight ? 1 : 0) - (a.highlight ? 1 : 0))
+    .map((m) => ({
+      id:        m.id,
+      name:      m.name,
+      thumbnail: forceHttps(m.thumbnail),
+      mp4_480:   forceHttps(m.mp4?.['480']),
+      mp4_max:   forceHttps(m.mp4?.max),
+      highlight: m.highlight ?? false,
+    }));
+
   const { rows } = await db.query(
     `INSERT INTO games (
        steam_app_id, title, slug, short_description, header_image,
        developers, publishers, release_date, metacritic_score,
-       genres, tags, is_free, metadata_fetched_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+       genres, tags, is_free, screenshots, steam_movies, metadata_fetched_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
      ON CONFLICT (steam_app_id) DO UPDATE SET
        title               = EXCLUDED.title,
        slug                = EXCLUDED.slug,
@@ -161,6 +183,8 @@ async function upsertGame(steamAppId, meta) {
        genres              = COALESCE(EXCLUDED.genres, games.genres),
        tags                = COALESCE(EXCLUDED.tags, games.tags),
        is_free             = EXCLUDED.is_free,
+       screenshots         = EXCLUDED.screenshots,
+       steam_movies        = EXCLUDED.steam_movies,
        metadata_fetched_at = NOW(),
        updated_at          = NOW()
      RETURNING id`,
@@ -168,6 +192,7 @@ async function upsertGame(steamAppId, meta) {
       steamAppId, title, slug, shortDesc, headerImage,
       developers, publishers, releaseDate, metacriticScore,
       genres, tags, isFree,
+      JSON.stringify(screenshots), JSON.stringify(steamMovies),
     ]
   );
 

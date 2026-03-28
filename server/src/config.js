@@ -28,4 +28,7 @@ module.exports = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   // JWT signing secret — auto-generated on Render, set manually in .env
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-please-change-in-production',
+  // YouTube Data API v3 — free key at https://console.cloud.google.com
+  // 100 searches/day on free tier — cache results in DB to avoid burning quota
+  youtubeApiKey: process.env.YOUTUBE_API_KEY || null,
 };

@@ -35,10 +35,16 @@ CREATE TABLE IF NOT EXISTS games (
   tags                TEXT[],                     -- Steam user tags
   categories          TEXT[],                     -- e.g. ['Single-player', 'Co-op']
   website             TEXT,
+  youtube_trailer_id  VARCHAR(16),                -- YouTube videoId, cached after first lookup
+  steam_movies        JSONB DEFAULT '[]',         -- Normalized Steam mp4/webm clips
   metadata_fetched_at TIMESTAMPTZ,
   created_at          TIMESTAMPTZ DEFAULT NOW(),
   updated_at          TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migrations for existing deployments:
+-- ALTER TABLE games ADD COLUMN IF NOT EXISTS youtube_trailer_id VARCHAR(16);
+-- ALTER TABLE games ADD COLUMN IF NOT EXISTS steam_movies JSONB DEFAULT '[]';
 
 CREATE INDEX IF NOT EXISTS idx_games_steam_app_id ON games(steam_app_id);
 CREATE INDEX IF NOT EXISTS idx_games_slug ON games(slug);

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getDeal } from '../api';
 import ResellerPrices from '../components/ResellerPrices';
+import TrailerEmbed from '../components/TrailerEmbed';
+import MediaGallery from '../components/MediaGallery';
 
 const LS_KEY = 'vaultdeal_steam_profile';
 
@@ -82,6 +84,8 @@ export default function GamePage() {
     all_time_low_date,
     avg_discount_pct,
     steam_app_id,
+    screenshots,
+    steam_movies,
   } = game;
 
   const currentPrice = prices?.[0]?.price_current;
@@ -158,6 +162,16 @@ export default function GamePage() {
           )}
         </div>
       </div>
+
+      {/* ── Trailer ── */}
+      {steam_app_id && (
+        <TrailerEmbed gameId={parseInt(gameId)} gameTitle={title} />
+      )}
+
+      {/* ── Media Gallery ── */}
+      {((screenshots?.length > 0) || (steam_movies?.length > 0)) && (
+        <MediaGallery screenshots={screenshots ?? []} movies={steam_movies ?? []} />
+      )}
 
       {/* ── Price overview ── */}
       <div className="game-section">
