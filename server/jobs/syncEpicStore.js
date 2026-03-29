@@ -83,6 +83,15 @@ function getPromoWindow(el) {
   return currentOffer || upcomingOffer || null;
 }
 
+function resolveEpicSlug(el) {
+  const slug =
+    el?.productSlug
+    || el?.offerMappings?.[0]?.pageSlug
+    || el?.urlSlug
+    || null;
+  return normalizeSlug(slug);
+}
+
 function normalizeKey(value) {
   return String(value || '')
     .toLowerCase()
@@ -104,9 +113,9 @@ async function fetchFreeGames() {
   const data = await fetchJson(FREE_GAMES_URL);
   const elements = data?.data?.Catalog?.searchStore?.elements ?? [];
   return elements.filter((el) => {
-    if (!el.productSlug) return false;
-    const offers = el.promotions?.promotionalOffers ?? [];
-    return offers.some((o) => o.promotionalOffers?.length > 0);
+    const promo = getPromoWindow(el);
+    const hasSlug = Boolean(resolveEpicSlug(el));
+    return hasSlug && (Boolean(promo) || (el.price?.totalPrice?.discountPrice ?? 1) === 0);
   });
 }
 
@@ -181,7 +190,7 @@ async function fetchOnSaleGames() {
     // Return whatever we got — free games endpoint is the reliable fallback
   }
 
-  return allElements.filter((el) => el.productSlug);
+  return allElements.filter((el) => Boolean(resolveEpicSlug(el)));
 }
 
 // ─── game matching ───────────────────────────────────────────────────────────
@@ -233,6 +242,7 @@ async function findGameId(epicSlug, title) {
 // ─── upsert price snapshot ───────────────────────────────────────────────────
 
 async function upsertSnapshot(gameId, el) {
+  const epicSlug = resolveEpicSlug(el);
   const price = el.price?.totalPrice;
   if (!price) return;
 
@@ -244,7 +254,7 @@ async function upsertSnapshot(gameId, el) {
   const promoWindow = getPromoWindow(el);
   const isFreePromo = priceCurrent === 0 && priceRegular > 0;
   const isOnSale = isFreePromo || priceCurrent < priceRegular;
-  const dealUrl = epicDealUrl(el.productSlug);
+  const dealUrl = epicDealUrl(epicSlug);
   const promoType = isFreePromo ? 'free' : isOnSale ? 'sale' : 'standard';
   const promoLabel = isFreePromo ? 'Free on Epic' : isOnSale ? 'Epic sale' : 'Epic price';
 
@@ -310,7 +320,7 @@ async function run() {
 
   for (const el of allGames) {
     const title = el.title;
-    const epicSlug = el.productSlug;
+    const epicSlug = resolveEpicSlug(el);
 
     try {
       const gameId = await findGameId(epicSlug, title);
