@@ -66,7 +66,7 @@ async function fetchCurrentDeals(filters = {}) {
   const params = [];
 
   if (filters.onSaleOnly) {
-    conditions.push('(cd.is_on_sale = TRUE OR cd.promo_type = \'free\')');
+    conditions.push(`(cd.is_on_sale = TRUE OR ${cdPromoTypeExpr} = 'free')`);
   }
   if (filters.storeType) {
     params.push(filters.storeType);
@@ -167,14 +167,14 @@ async function buildDiscoverySections(input = {}) {
       store: 'epic',
       freeOnly: true,
       limit: 12,
-      orderBy: 'COALESCE(cd.promo_ends_at, cd.sale_ends_at) ASC NULLS LAST, cd.recorded_at DESC',
+      orderBy: `COALESCE(${cdPromoEndsExpr}, ${cdSaleEndsExpr}) ASC NULLS LAST, cd.recorded_at DESC`,
     }),
     fetchCurrentDeals({
       onSaleOnly: true,
       storeType: 'official',
       endingSoon: true,
       limit: 12,
-      orderBy: 'COALESCE(cd.sale_ends_at, cd.promo_ends_at) ASC NULLS LAST, cd.discount_pct DESC NULLS LAST',
+      orderBy: `COALESCE(${cdSaleEndsExpr}, ${cdPromoEndsExpr}) ASC NULLS LAST, cd.discount_pct DESC NULLS LAST`,
     }),
     fetchCurrentDeals({
       onSaleOnly: true,
