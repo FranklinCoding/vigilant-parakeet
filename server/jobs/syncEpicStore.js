@@ -83,6 +83,21 @@ function getPromoWindow(el) {
   return currentOffer || upcomingOffer || null;
 }
 
+function normalizeKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function normalizeSlug(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\/home$/i, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 // ─── fetch free games ────────────────────────────────────────────────────────
 
 async function fetchFreeGames() {
@@ -172,24 +187,42 @@ async function fetchOnSaleGames() {
 // ─── game matching ───────────────────────────────────────────────────────────
 
 async function findGameId(epicSlug, title) {
+  const normalizedSlug = normalizeSlug(epicSlug);
+  const normalizedTitle = normalizeKey(title);
+
   // 1. Match by epic_slug
   if (epicSlug) {
     const { rows } = await db.query(
-      'SELECT id FROM games WHERE epic_slug = $1 LIMIT 1',
-      [epicSlug]
+      'SELECT id FROM games WHERE epic_slug = $1 OR epic_slug = $2 LIMIT 1',
+      [epicSlug, normalizedSlug]
     );
     if (rows.length) return rows[0].id;
   }
 
-  // 2. Case-insensitive title match
+  // 2. Match by our internal slug
+  if (normalizedSlug) {
+    const { rows } = await db.query(
+      'SELECT id FROM games WHERE slug = $1 LIMIT 1',
+      [normalizedSlug]
+    );
+    if (rows.length) {
+      await db.query('UPDATE games SET epic_slug = $1 WHERE id = $2', [normalizedSlug, rows[0].id]);
+      return rows[0].id;
+    }
+  }
+
+  // 3. Flexible normalized title or slug match
   const { rows } = await db.query(
-    'SELECT id FROM games WHERE LOWER(title) = LOWER($1) LIMIT 1',
-    [title]
+    `SELECT id
+     FROM games
+     WHERE regexp_replace(lower(title), '[^a-z0-9]+', '', 'g') = $1
+        OR regexp_replace(lower(COALESCE(slug, '')), '[^a-z0-9]+', '', 'g') = $1
+     LIMIT 1`,
+    [normalizedTitle]
   );
   if (rows.length) {
-    // Opportunistically save the epic_slug for future lookups
-    if (epicSlug) {
-      await db.query('UPDATE games SET epic_slug = $1 WHERE id = $2', [epicSlug, rows[0].id]);
+    if (normalizedSlug) {
+      await db.query('UPDATE games SET epic_slug = $1 WHERE id = $2', [normalizedSlug, rows[0].id]);
     }
     return rows[0].id;
   }
